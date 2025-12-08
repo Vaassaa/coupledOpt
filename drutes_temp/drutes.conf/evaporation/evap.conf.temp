@@ -1,0 +1,55 @@
+#                             _____________________  ___________________
+#                             ___  __ \__  __ \_  / / /_  /___  ____/_  ___/
+#                             __  / / /_  /_/ /  / / /_  __/_  __/  _____ \ 
+#                             _  /_/ /_  _, _// /_/ / / /_ _  /___  ____/ / 
+#                             /_____/ /_/ |_| \____/  \__/ /_____/  /____/  
+#                                                                           
+# 
+#---------------------------------------------D R U t E S---------------------------------------------------------------------------------------
+#                             (Dual Richards' Unsaturated Equation Solver)
+#
+#--------------------------d r u t e s . c o n f / e v a p o r a t i o n / e v a p . c o n f ---------------------------------------------------------------
+
+
+# Empirical regression parameters for the Thermal conductivity [Wm^-1 K^-1] (thermal conductivity water content dependent)
+#thermal_conductivity = b1 + b2*theta_l + b3*theta_l**0.5 (Chung and Horton,1987) (define for each material)
+# b1    b2     b3
+!b1_org !b2_org !b3_org
+!b1_min !b2_min !b3_min
+
+# ------begin albedo method -----
+
+#1 - read data from drutes.conf/evaporation/albedo.conf
+#2 - compute albedo from surface water content
+2
+
+#if option 2 provide the following input (otherwise comment it out) (!!careful not to create discontinuity in albedo!!)
+# low theta_top [-]  high theta_top [-]    albedo_min [-]    albedo_max [-]   A
+#--------------------------------------------------------------------------------
+0.1                0.25                    0.1              0.25        0.35  
+
+#-----end albedo method ------
+
+#----------------------------
+#reference level for temperature measurement
+2
+
+## method for atmospheric emisivity
+# IDSO (Idso, 1981)
+# BRUT  (Brutsaert, 1975)
+IDSO
+#if BRUT define C_e constant [-], if IDSO leave blank
+#!C_e
+
+# constants for surface resistance (Griend & Owe, 1994)
+# theta_lim (recommended 0.15)
+0.15
+#C_r (recommended 35)
+35.0
+
+#
+#----------------------Parameters for energy surface balance -----------------------------------------------------
+#----------------------------------------------------------------------------------------------------------------------------------------------------
+#day of simulation   latitude [dg]      sunset hour angle [dg]       solar declination [dg]    time of solar noon [hrs]
+1           10              0                  13                        12
+#
