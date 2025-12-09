@@ -9,6 +9,7 @@ Dissertation work
 """
 import numpy as np
 import pandas as pd
+import subprocess
 from scipy.optimize import differential_evolution
 
 def getError(run_dir):
@@ -111,14 +112,80 @@ def getError(run_dir):
     
 
 
-# def runDrutes(par):
-    # """
-    # Executes the simulation with a given set of parameters.
-    # A unique temporary working directory is created for each run.
-    # """
+def runDrutes(par):
+    """
+    Executes the simulation with a given set of parameters.
+    """
+    # Define input parameters   
+    # evap module
+    # organic
+    b1_org = par[0] # thermal coef. pars
+    b2_org = par[1]
+    b3_org = par[2]
+
+    # mineral
+    b1_min = par[3]
+    b2_min = par[4]
+    b3_min = par[5]
+
+    # water module
+    # organic
+    alpha_org = par[6] #  inverse of the air entry suction
+    n_org = par[7]  # porosity
+    K_org = par[8] # hydra. conduct.
+
+    # mineral 
+    alpha_min = par[9]
+    n_min = par[10]
+    K_min = par[11]
+
+    # Build the command to run the shell script.
+    cmd = ["bash", "run_drutes_serial.sh",
+           str(b1_org),
+           str(b2_org),
+           str(b3_org),
+           str(b1_min),
+           str(b2_min),
+           str(b3_min),
+           str(alpha_org),
+           str(n_org),
+           str(K_org),
+           str(alpha_min),
+           str(n_min),
+           str(K_min)
+           ]
     
-    # return error
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error running the shell script: {e}")
+        return np.inf  # Return a large error if the simulation fails
+
+    error = getError('drutes_run/')
+    return error
 
 if __name__ == '__main__':
-    getError('drutes_run/')
-    
+    # Ks (cm·day−1) 0.000864 – 864
+    # θr (-) 0 – 0.13
+    # α (m−1) 0.15 – 2000
+    # n (-) 1.1 – 5
+    # STPs
+    # b1 (W·m−1·K−1) 0.02 – 1
+    # b2 (W·m−1·K−1) 0.02 – 6
+    # b3 (W·m−1·K−1) 0.1 – 4
+
+    pars = [0.02,
+            0.02,
+            0.02,
+            0.02,
+            0.02,
+            0.02,
+            0.15,
+            1.1,
+            0.000864,
+            0.15,
+            1.1,
+            0.000864
+            ]
+    error = runDrutes(pars)    
+    print(error)

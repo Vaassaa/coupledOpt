@@ -1,13 +1,5 @@
-# Bash script for rewriting .conf file for parameter optimalization
-
-#WORKDIR="$1"
-#shift
-#rm -rf "$WORKDIR"
-#cp -a drutes_temp "$WORKDIR"
-#cd "$WORKDIR"
-
 #!/bin/bash
-
+# Bash script for rewriting .conf file for parameter optimalization
 # remove drutes_run
 rm -rf drutes_run
 
@@ -29,11 +21,11 @@ b3_min=$6
 
 # water module
 alpha_org=$7
-n_org=${8}
+n_org=$8
 
 # compute m_org = 1 - 1/n_org
 m_org=$(echo "1 - 1/$n_org" | bc -l)
-K_org=${9}
+K_org=$9
 
 alpha_min=${10}
 n_min=${11}
