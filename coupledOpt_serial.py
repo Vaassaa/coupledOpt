@@ -132,11 +132,13 @@ def runDrutes(par):
     # organic
     alpha_org = par[6] #  inverse of the air entry suction
     n_org = par[7]  # porosity
+    m_org = 1 - 1/n_org
     K_org = par[8] # hydra. conduct.
 
     # mineral 
     alpha_min = par[9]
     n_min = par[10]
+    m_min = 1 - 1/n_min
     K_min = par[11]
 
     # Build the command to run the shell script.
@@ -149,9 +151,11 @@ def runDrutes(par):
            str(b3_min),
            str(alpha_org),
            str(n_org),
+           str(m_org),
            str(K_org),
            str(alpha_min),
            str(n_min),
+           str(m_min),
            str(K_min)
            ]
     
