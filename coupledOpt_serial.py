@@ -105,8 +105,6 @@ def getError(run_dir):
     # Compute the RMSE
     diff = simulated[column_names[1:]] - measured[column_names[1:]]
     error = np.sqrt(np.sum(diff.values**2))
-    print(simulated.head())
-    print(measured.head())
     return error
 
     
@@ -166,30 +164,69 @@ def runDrutes(par):
         return np.inf  # Return a large error if the simulation fails
 
     error = getError('drutes_run/')
+    runDrutes.call_count += 1
+    print(f"Iteration: {runDrutes.call_count}\n")
+    print(f"Error: {error}\n")
+
     return error
 
-if __name__ == '__main__':
-    # Ks (cm·day−1) 0.000864 – 864
-    # θr (-) 0 – 0.13
-    # α (m−1) 0.15 – 2000
-    # n (-) 1.1 – 5
-    # STPs
-    # b1 (W·m−1·K−1) 0.02 – 1
-    # b2 (W·m−1·K−1) 0.02 – 6
-    # b3 (W·m−1·K−1) 0.1 – 4
 
-    pars = [0.02,
-            0.02,
-            0.02,
-            0.02,
-            0.02,
-            0.02,
-            0.15,
-            1.1,
-            0.000864,
-            0.15,
-            1.1,
-            0.000864
-            ]
-    error = runDrutes(pars)    
-    print(error)
+if __name__ == '__main__':
+    # Define bounds for the optimization parameters
+    # thermal coef. params
+    b1_bnd = (0.02, 1.0) 
+    b2_bnd = (0.02, 6.0) 
+    b3_bnd = (0.02, 4.0) 
+    # van Genuchten params
+    K_bnd = (0.000864, 864) # hydro. conduct.
+    alpha_bnd = (0.15, 2000) # inverse of air entry suction
+    n_bnd = (1.1, 5.0) # porosity
+    # Put the into one list
+    bounds = [b1_bnd, # organic horizont
+              b2_bnd,
+              b3_bnd,
+              b1_bnd, # mineral horizont
+              b2_bnd,
+              b3_bnd,
+              alpha_bnd, # organic horizont
+              n_bnd,
+              K_bnd,
+              alpha_bnd, # mineral horizont
+              n_bnd,
+              K_bnd
+              ]
+
+    # Initialize a counter attribute for runDrutes
+    runDrutes.call_count = 0
+
+    # Run differential evolution optimization in serial
+    result = differential_evolution(
+        runDrutes,       # Objective function to minimize (DRUtES simulation)
+        bounds,          # Parameter bounds for the search space
+        strategy='rand1bin',  
+        # Evolution strategy:
+        # 'rand1bin' = highly exploratory, good for complex or multimodal landscapes.
+        # Helps avoid local minima compared to the default 'best1bin'.
+        popsize=30,      
+        # Population size multiplier.
+        # Actual population = popsize * dimension.
+        # Larger popsize improves global search but increases computational cost.
+        mutation=(0.5, 1.2), 
+        # Differential weight (exploration strength).
+        # A tuple means SciPy randomly picks a value in this range each generation.
+        # Encourages diversity and better global optimization.
+        recombination=0.8,
+        # Crossover probability (0–1).
+        # Higher value means more parameter mixing between candidate solutions.
+        tol=1e-3,
+        # Relative tolerance for convergence.
+        # Optimization stops when the population no longer improves significantly.
+        atol=0,
+        # Absolute tolerance for convergence.
+        # Set to 0 so only relative tolerance controls stopping.
+        maxiter=5000,
+        # Maximum number of generations.
+    )
+
+    # Output the optimized parameter values and error
+    print("Optimized values:\n", result.x, '\n', result.fun)

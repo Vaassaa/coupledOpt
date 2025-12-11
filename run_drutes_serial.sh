@@ -59,9 +59,9 @@ sed \
 ###########################################
 # RUN DRUTES
 ###########################################
-bin/drutes
+#bin/drutes
 
 # run drutes simulation and discard the terminal output
-#bin/drutes > /dev/null
+bin/drutes > /dev/null
 
 
