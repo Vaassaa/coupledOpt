@@ -11,6 +11,23 @@ import numpy as np
 import pandas as pd
 import subprocess
 from scipy.optimize import differential_evolution
+import shutil
+from datetime import datetime
+
+def log_run(call_id, error, par, logfile="de_log.txt"):
+    """
+    Optimalizations results logger
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = (
+        f"{call_id}\t"
+        f"{timestamp}\t"
+        f"{error:.8g}\t"
+        + "\t".join(map(str, par))
+        + "\n"
+    )
+    with open(logfile, "a") as f:
+        f.write(line)
 
 def getError(run_dir):
     """
@@ -116,38 +133,37 @@ def runDrutes(par):
     """
     print("-------------------------------------------\n")
     print(f"STARTING DRUTES SIMULATION WITH PARAMETERS:\n")
-    print(f"Thermal coeficient parameters:\n")
-    print(f"b1 - b2 - b3\n")
+    print(f"Thermal coeficient parameters: [ b1 | b2 | b3 ]\n")
     # Define input parameters   
     # evap module
     # organic
     b1_org = par[0] # thermal coef. pars
     b2_org = par[1]
     b3_org = par[2]
-    print(f"Organic: {b1_org} - {b2_org} - {b3_org}\n")
+    print(f"Organic: {b1_org} | {b2_org} | {b3_org}\n")
 
     # mineral
     b1_min = par[3]
     b2_min = par[4]
     b3_min = par[5]
-    print(f"Mineral: {b1_min} - {b2_min} - {b3_min}\n")
+    print(f"Mineral: {b1_min} | {b2_min} | {b3_min}\n")
 
-    print(f"Van Genuchten parameters:\n")
-    print(f"alpha - n - m - K\n")
+    print(f"Van Genuchten parameters: [ alpha | n | m | K ]\n")
     # water module
     # organic
     alpha_org = par[6] #  inverse of the air entry suction
     n_org = par[7]  # porosity
     m_org = 1 - 1/n_org
     K_org = par[8] # hydra. conduct.
-    print(f"Organic: {alpha_org} - {n_org} - {m_org} - {K_org}\n")
+    print(f"Organic: {alpha_org} | {n_org} | {m_org} | {K_org}\n")
 
     # mineral 
     alpha_min = par[9]
     n_min = par[10]
     m_min = 1 - 1/n_min
     K_min = par[11]
-    print(f"Organic: {alpha_min} - {n_min} - {m_min} - {K_min}\n")
+    print(f"Mineral: {alpha_min} | {n_min} | {m_min} | {K_min}\n")
+    print("-------------------------------------------\n")
 
     # Build the command to run the shell script.
     cmd = ["bash", "run_drutes_serial.sh",
@@ -179,6 +195,12 @@ def runDrutes(par):
     runDrutes.call_count += 1
     print(f"DRUTES CALLED: {runDrutes.call_count} times\n")
     print(f"OBJECTIVE FUNCTION ERROR: {error}\n")
+
+    # Log finished run
+    log_run(runDrutes.call_count, error, par)
+
+    # Remove temp dir 
+    shutil.rmtree('drutes_run/', ignore_errors=True)
 
     return error
 
