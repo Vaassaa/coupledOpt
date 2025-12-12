@@ -11,6 +11,29 @@ import numpy as np
 import pandas as pd
 import subprocess
 from scipy.optimize import differential_evolution
+from uuid import uuid4
+from datetime import datetime
+import shutil
+from multiprocessing import Value, Lock
+
+# function call counter for multiprocessing
+global_counter = Value('i', 0)    # integer counter
+counter_lock   = Lock()
+
+def log_run(call_id, error, par, logfile="de_log.txt"):
+    """
+    Optimalizations results logger
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = (
+        f"{call_id}\t"
+        f"{timestamp}\t"
+        f"{error:.8g}\t"
+        + "\t".join(map(str, par))
+        + "\n"
+    )
+    with open(logfile, "a") as f:
+        f.write(line)
 
 def getError(run_dir):
     """
@@ -105,8 +128,6 @@ def getError(run_dir):
     # Compute the RMSE
     diff = simulated[column_names[1:]] - measured[column_names[1:]]
     error = np.sqrt(np.sum(diff.values**2))
-    print(simulated.head())
-    print(measured.head())
     return error
 
     
@@ -115,6 +136,7 @@ def getError(run_dir):
 def runDrutes(par):
     """
     Executes the simulation with a given set of parameters.
+    Parallel execution.
     """
     # Define input parameters   
     # evap module
@@ -141,8 +163,17 @@ def runDrutes(par):
     m_min = 1 - 1/n_min
     K_min = par[11]
 
+    # call counter
+    with counter_lock:
+        global_counter.value += 1
+        call_id = global_counter.value
+
+    # Generate unique dir name for this simulation
+    run_id = uuid4().hex
+    run_dir = f"drutes_run_{run_id}/"
+
     # Build the command to run the shell script.
-    cmd = ["bash", "run_drutes_serial.sh",
+    cmd = ["bash", "run_drutes_parallel.sh", run_dir,
            str(b1_org),
            str(b2_org),
            str(b3_org),
@@ -165,10 +196,17 @@ def runDrutes(par):
         print(f"Error running the shell script: {e}")
         return np.inf  # Return a large error if the simulation fails
 
-    error = getError('drutes_run/')
+    error = getError(run_dir)
     runDrutes.call_count += 1
-    print(f"Iteration: {runDrutes.call_count}\n")
+    print(f"SIMULATION {run_id} FINISHED!")
+    print(f"DRUTES CALLED: {runDrutes.call_count} times\n")
+    print(f"RUN {run_id} OBJECTIVE FUNCTION ERROR: {error}\n")
 
+    # Log finished run
+    log_run(call_id, error, par)
+
+    # Remove temp dir 
+    shutil.rmtree(run_dir, ignore_errors=True)
     return error
 
 
@@ -202,16 +240,36 @@ if __name__ == '__main__':
 
     # Run differential evolution optimization in serial
     result = differential_evolution(
-        runDrutes,
-        bounds,
-        strategy='rand1bin',
-        popsize=30,
-        mutation=(0.5, 1.2),
+        runDrutes,       # Objective function to minimize (DRUtES simulation)
+        bounds,          # Parameter bounds for the search space
+        strategy='rand1bin',  
+        # Evolution strategy:
+        # 'rand1bin' = highly exploratory, good for complex or multimodal landscapes.
+        # Helps avoid local minima compared to the default 'best1bin'.
+        popsize=30,      
+        # Population size multiplier.
+        # Actual population = popsize * dimension.
+        # Larger popsize improves global search but increases computational cost.
+        mutation=(0.5, 1.2), 
+        # Differential weight (exploration strength).
+        # A tuple means SciPy randomly picks a value in this range each generation.
+        # Encourages diversity and better global optimization.
         recombination=0.8,
+        # Crossover probability (0–1).
+        # Higher value means more parameter mixing between candidate solutions.
         tol=1e-3,
+        # Relative tolerance for convergence.
+        # Optimization stops when the population no longer improves significantly.
         atol=0,
-        maxiter=5000
+        # Absolute tolerance for convergence.
+        # Set to 0 so only relative tolerance controls stopping.
+        maxiter=5000,
+        # Maximum number of generations.
+        workers=-1,       
+        # Enables parallel computing on all CPU cores
+        updating='deferred'  
+        # Required for efficient parallel DE updates
     )
 
     # Output the optimized parameter values and error
-    print("Optimized values:\n", result.x, '\n', result.fun)
+    print("OPTIMIZED VALUES:\n", result.x, '\n', result.fun)
