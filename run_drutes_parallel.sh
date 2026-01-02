@@ -20,16 +20,14 @@ b3_min=$6
 
 # water module
 alpha_org=$7
-n_org=${8}
+n_org=$8
+m_org=$9
+K_org=${10}
 
-# compute m_org = 1 - 1/n_org
-m_org=$(echo "1 - 1/$n_org" | bc -l)
-K_org=${9}
-
-alpha_min=${10}
-n_min=${11}
-m_min=$(echo "1 - 1/$n_min" | bc -l)
-K_min=${12}
+alpha_min=${11}
+n_min=${12}
+m_min=${13}
+K_min=${14}
 
 ###########################################
 # CREATE evap.conf

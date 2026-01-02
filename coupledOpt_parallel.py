@@ -235,6 +235,14 @@ if __name__ == '__main__':
               K_bnd
               ]
 
+    # Define log header
+    with open("de_log.txt", "a") as f:
+        f.write("OPTIMALIZATION LOG \n"+
+                "call_id \t timestamp \t rmse \t"+
+                "b1_org \t b2_org \t b3_org \t"+
+                "b1_min \t b2_min \t b3_min \t"+
+                "alpha_org \t n_org \t m_org \t K_org \t"+
+                "alpha_min \t n_min \t m_min \t K_min")
     # Initialize a counter attribute for runDrutes
     runDrutes.call_count = 0
 

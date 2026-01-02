@@ -1,0 +1,2 @@
+OPTIMALIZATION LOG 
+call_id 	 timestamp 	 rmse 	b1_org 	 b2_org 	 b3_org 	b1_min 	 b2_min 	 b3_min 	alpha_org 	 n_org 	 m_org 	 K_org 	alpha_min 	 n_min 	 m_min 	 K_min
