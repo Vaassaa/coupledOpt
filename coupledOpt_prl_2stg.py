@@ -4,7 +4,7 @@ of Saito-Sakai model for modeling of soil temperature
 and moisture regime in a forest location of the AMALIA pilot 
 intended to run on metacentrum cluster
 Author: Vaclav Steinbach
-Date: 08.12.2025
+Date: 03.01.2026
 Dissertation work
 """
 import numpy as np
@@ -20,7 +20,16 @@ from multiprocessing import Value, Lock
 global_counter = Value('i', 0)    # integer counter
 counter_lock   = Lock()
 
-def log_run(call_id, error, par, logfile="de_log.txt"):
+def shrink_bounds(x, bounds, shrink=0.25):
+    new_bounds = []
+    for xi, (lo, hi) in zip(x, bounds):
+        span = hi - lo
+        new_lo = max(lo, xi - shrink * span)
+        new_hi = min(hi, xi + shrink * span)
+        new_bounds.append((new_lo, new_hi))
+    return new_bounds
+
+def log_run(call_id, error, error_heat, error_moist, par, logfile="de_log.txt"):
     """
     Optimalizations results logger
     """
@@ -29,6 +38,8 @@ def log_run(call_id, error, par, logfile="de_log.txt"):
         f"{call_id}\t"
         f"{timestamp}\t"
         f"{error:.8g}\t"
+        f"{error_heat:.8g}\t"
+        f"{error_moist:.8g}\t"
         + "\t".join(map(str, par))
         + "\n"
     )
@@ -81,7 +92,7 @@ def getError(run_dir):
         # convert timedelta idx back to seconds
         df_res.index = df_res.index.total_seconds().astype(int)
         # keep values only
-        series = df_res["T"] / 100 # for better comparability in RMSE
+        series = df_res["T"] # for better comparability in RMSE
 
         # reindex to match measured times
         simulated[col] = series.reindex(simulated.index)
@@ -125,10 +136,32 @@ def getError(run_dir):
         # reindex to match measured times
         simulated[col] = series.reindex(simulated.index)
 
-    # Compute the RMSE
+    # Compute residuals
     diff = simulated[column_names[1:]] - measured[column_names[1:]]
-    error = np.sqrt(np.sum(diff.values**2))
-    return error
+    # Omit NaNs if present
+    diff = diff.dropna()
+
+    # Compute normalization constants from measurements
+    norm = {}
+    for col in diff.columns:
+        norm[col] = measured[col].std()
+
+    # Normalize residuals (dimensionless)
+    for col in diff.columns:
+        diff[col] = diff[col] / norm[col]
+
+    # Split by physics
+    heat_cols = ["T_8n", "T_15n", "T_23n"]
+    moisture_cols = ["theta_8n", "theta_23n"]
+
+    # Compute separate errors
+    error_heat = np.sqrt(np.mean(diff[heat_cols].values**2))
+    error_moist = np.sqrt(np.mean(diff[moisture_cols].values**2))
+
+    # Combine
+    # error = error_heat + error_moist
+    error = np.sqrt(error_heat**2 + error_moist**2) # quad aggregation
+    return error, error_heat, error_moist
 
     
 
@@ -196,14 +229,14 @@ def runDrutes(par):
         print(f"Error running the shell script: {e}")
         return np.inf  # Return a large error if the simulation fails
 
-    error = getError(run_dir)
+    error, error_heat, error_moist = getError(run_dir)
     runDrutes.call_count += 1
     print(f"SIMULATION {run_id} FINISHED!")
     print(f"DRUTES CALLED: {runDrutes.call_count} times\n")
     print(f"RUN {run_id} OBJECTIVE FUNCTION ERROR: {error}\n")
 
     # Log finished run
-    log_run(call_id, error, par)
+    log_run(call_id, error, error_heat, error_moist, par)
 
     # Remove temp dir 
     shutil.rmtree(run_dir, ignore_errors=True)
@@ -217,9 +250,20 @@ if __name__ == '__main__':
     b2_bnd = (0.02, 6.0) 
     b3_bnd = (0.02, 4.0) 
     # van Genuchten params
-    K_bnd = (0.000864, 864) # hydro. conduct.
     alpha_bnd = (0.15, 2000) # inverse of air entry suction
     n_bnd = (1.1, 5.0) # porosity
+    K_bnd = (0.000864, 864) # hydro. conduct.
+
+    # Better guess I guess?
+    # thermal coef. params
+    b1_bnd = (0.02, 1.0) 
+    b2_bnd = (3.02, 6.0) 
+    b3_bnd = (1.02, 4.0) 
+    # van Genuchten params
+    alpha_bnd = (1.15, 2000) # inverse of air entry suction
+    n_bnd = (1.1, 5.0) # porosity
+    K_bnd = (0.000864, 864) # hydro. conduct.
+
     # Put the into one list
     bounds = [b1_bnd, # organic horizont
               b2_bnd,
@@ -235,48 +279,61 @@ if __name__ == '__main__':
               K_bnd
               ]
 
-    # Define log header
+    # Define log header for stage 1
     with open("de_log.txt", "a") as f:
-        f.write("OPTIMALIZATION LOG \n"+
-                "call_id \t timestamp \t rmse \t"+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"OPTIMALIZATION LOG --- STAGE 1 --- {timestamp} \n"+
+                "call_id \t timestamp \t error \t error_heat \t error_moist \t"+
                 "b1_org \t b2_org \t b3_org \t"+
                 "b1_min \t b2_min \t b3_min \t"+
-                "alpha_org \t n_org \t m_org \t K_org \t"+
-                "alpha_min \t n_min \t m_min \t K_min \n")
+                "alpha_org \t n_org \t K_org \t"+
+                "alpha_min \t n_min \t K_min \n")
     # Initialize a counter attribute for runDrutes
     runDrutes.call_count = 0
 
-    # Run differential evolution optimization in serial
-    result = differential_evolution(
-        runDrutes,       # Objective function to minimize (DRUtES simulation)
-        bounds,          # Parameter bounds for the search space
-        strategy='rand1bin',  
-        # Evolution strategy:
-        # 'rand1bin' = highly exploratory, good for complex or multimodal landscapes.
-        # Helps avoid local minima compared to the default 'best1bin'.
-        popsize=30,      
-        # Population size multiplier.
-        # Actual population = popsize * dimension.
-        # Larger popsize improves global search but increases computational cost.
-        mutation=(0.5, 1.2), 
-        # Differential weight (exploration strength).
-        # A tuple means SciPy randomly picks a value in this range each generation.
-        # Encourages diversity and better global optimization.
+    # Run differential evolution optimization in parallel
+    # First stage run - Aggresive search
+    result_stage1 = differential_evolution(
+        runDrutes,
+        bounds,
+        strategy='rand1bin',
+        popsize=32,
+        mutation=(0.6, 1.2),
         recombination=0.8,
-        # Crossover probability (0–1).
-        # Higher value means more parameter mixing between candidate solutions.
         tol=1e-3,
-        # Relative tolerance for convergence.
-        # Optimization stops when the population no longer improves significantly.
-        atol=0,
-        # Absolute tolerance for convergence.
-        # Set to 0 so only relative tolerance controls stopping.
-        maxiter=5000,
-        # Maximum number of generations.
-        workers=-1,       
-        # Enables parallel computing on all CPU cores
-        updating='deferred'  
-        # Required for efficient parallel DE updates
+        maxiter=1,
+        workers=-1,
+        updating='deferred',
+        polish=False   
+    )
+
+    # Shrink the bound around best case
+    refined_bounds = shrink_bounds(result_stage1.x, bounds, shrink=0.15)
+
+    # Define log header for stage 2
+    with open("de_log.txt", "a") as f:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"OPTIMALIZATION LOG --- STAGE 2 --- {timestamp} \n"+
+                "call_id \t timestamp \t error \t error_heat \t error_moist \t"+
+                "b1_org \t b2_org \t b3_org \t"+
+                "b1_min \t b2_min \t b3_min \t"+
+                "alpha_org \t n_org \t K_org \t"+
+                "alpha_min \t n_min \t K_min \n")
+
+    # Second stage run - Finetune best case
+    result_stage2 = differential_evolution(
+        runDrutes,
+        refined_bounds,
+        strategy='best1bin',
+        popsize=16,
+        mutation=(0.15, 0.5),
+        recombination=0.9,
+        tol=1e-4,
+        maxiter=1500,
+        workers=-1,
+        updating='deferred',
+        polish=True,   # allow local polishing
+        init=[result_stage1.x] # start from the best find
     )
 
     # Output the optimized parameter values and error
