@@ -21,7 +21,7 @@ column_names = [
 data = pd.read_csv('rain.in', comment='#', sep='\\s+', header=None, names=column_names)
 
 # Rewrite throughfall column values --> m/10min to m/s
-data[picked_column] = data[picked_column]/6
+data[picked_column] = data[picked_column]*6
 
 # Save the modified data back to .in file starting from third row (index 2), without index and with a custom format.
 with open('rain_fixed.in', 'w') as f:

@@ -2,7 +2,7 @@
 Python script for optimalization of parameters
 of Saito-Sakai model for modeling of soil temperature
 and moisture regime in a forest location of the AMALIA pilot 
-intended to run on metacentrum cluster
+intended to run on home workstation
 Author: Vaclav Steinbach
 Date: 03.01.2026
 Dissertation work
@@ -164,8 +164,6 @@ def getError(run_dir):
     return error, error_heat, error_moist
 
     
-
-
 def runDrutes(par):
     """
     Executes the simulation with a given set of parameters.
@@ -230,9 +228,7 @@ def runDrutes(par):
         return np.inf  # Return a large error if the simulation fails
 
     error, error_heat, error_moist = getError(run_dir)
-    runDrutes.call_count += 1
     print(f"SIMULATION {run_id} FINISHED!")
-    print(f"DRUTES CALLED: {runDrutes.call_count} times\n")
     print(f"RUN {run_id} OBJECTIVE FUNCTION ERROR: {error}\n")
 
     # Log finished run
@@ -241,6 +237,17 @@ def runDrutes(par):
     # Remove temp dir 
     shutil.rmtree(run_dir, ignore_errors=True)
     return error
+
+def jitter_init(x, bounds, rel=0.05, size=16):
+    pop = []
+    for _ in range(size):
+        xi = []
+        for v, (lo, hi) in zip(x, bounds):
+            span = hi - lo
+            dv = np.random.uniform(-rel, rel) * span
+            xi.append(np.clip(v + dv, lo, hi))
+        pop.append(xi)
+    return np.array(pop)
 
 
 if __name__ == '__main__':
@@ -288,8 +295,6 @@ if __name__ == '__main__':
                 "b1_min \t b2_min \t b3_min \t"+
                 "alpha_org \t n_org \t K_org \t"+
                 "alpha_min \t n_min \t K_min \n")
-    # Initialize a counter attribute for runDrutes
-    runDrutes.call_count = 0
 
     # Run differential evolution optimization in parallel
     # First stage run - Aggresive search
@@ -307,8 +312,26 @@ if __name__ == '__main__':
         polish=False   
     )
 
+   # STAGE TWO FROM BEST FOUND 
+    x_best = np.array([
+        0.7066075248489605,
+        4.000952981933188,
+        3.1634828016964063,
+        0.610669128869678,
+        5.796028622986176,
+        2.0409742877617933,
+        1335.3244091938848,
+        4.784649120391409,
+        93.38526453060149,
+        68.36381671191975,
+        1.1344025499205599,
+        702.771330982797
+    ])
+
     # Shrink the bound around best case
-    refined_bounds = shrink_bounds(result_stage1.x, bounds, shrink=0.15)
+    # refined_bounds = shrink_bounds(result_stage1.x, bounds, shrink=0.15)
+    refined_bounds = shrink_bounds(x_best, bounds, shrink=0.15)
+    init = np.tile(x_best, (8 * len(bounds), 1))
 
     # Define log header for stage 2
     with open("de_log.txt", "a") as f:
@@ -320,21 +343,36 @@ if __name__ == '__main__':
                 "alpha_org \t n_org \t K_org \t"+
                 "alpha_min \t n_min \t K_min \n")
 
-    # Second stage run - Finetune best case
+    # # Second stage run - Finetune best case
+    # result_stage2 = differential_evolution(
+        # runDrutes,
+        # refined_bounds,
+        # strategy='best1bin',
+        # popsize=16,
+        # mutation=(0.15, 0.5),
+        # recombination=0.9,
+        # tol=1e-4,
+        # maxiter=1500,
+        # workers=-1,
+        # updating='deferred',
+        # polish=True,   # allow local polishing
+        # # init=[result_stage1.x] # start from the best find
+        # init=init # start from the best find
+    # )
+
+    init_pop = jitter_init(x_best, refined_bounds, rel=0.05, size=16)
+
     result_stage2 = differential_evolution(
         runDrutes,
         refined_bounds,
         strategy='best1bin',
-        popsize=16,
-        mutation=(0.15, 0.5),
+        popsize=1,          # IMPORTANT: population is given explicitly
+        mutation=(0.1, 0.4),
         recombination=0.9,
-        tol=1e-4,
-        maxiter=1500,
+        tol=1e-5,
+        maxiter=300,
         workers=-1,
         updating='deferred',
-        polish=True,   # allow local polishing
-        init=[result_stage1.x] # start from the best find
+        polish=False,
+        init=init_pop
     )
-
-    # Output the optimized parameter values and error
-    print("OPTIMIZED VALUES:\n", result.x, '\n', result.fun)
