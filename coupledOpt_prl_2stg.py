@@ -257,19 +257,23 @@ if __name__ == '__main__':
     b2_bnd = (0.02, 6.0) 
     b3_bnd = (0.02, 4.0) 
     # van Genuchten params
-    alpha_bnd = (0.15, 2000) # inverse of air entry suction
-    n_bnd = (1.1, 5.0) # porosity
-    K_bnd = (0.000864, 864) # hydro. conduct.
+    alpha_bnd = (1, 10) # [1/m] inverse of air entry suction
+    n_bnd = (1.05, 3.0) # [-] porosity
+    K_bnd = (1.0e-7, 3.0e-4) # [m/s] hydro. conduct.
+    # # van Genuchten params
+    # alpha_bnd = (0.15, 2000) # inverse of air entry suction
+    # n_bnd = (1.1, 5.0) # porosity
+    # K_bnd = (0.000864, 864) # hydro. conduct.
 
-    # Better guess I guess?
-    # thermal coef. params
-    b1_bnd = (0.02, 1.0) 
-    b2_bnd = (3.02, 6.0) 
-    b3_bnd = (1.02, 4.0) 
-    # van Genuchten params
-    alpha_bnd = (1.15, 2000) # inverse of air entry suction
-    n_bnd = (1.1, 5.0) # porosity
-    K_bnd = (0.000864, 864) # hydro. conduct.
+    # # Better guess I guess?
+    # # thermal coef. params
+    # b1_bnd = (0.02, 1.0) 
+    # b2_bnd = (3.02, 6.0) 
+    # b3_bnd = (1.02, 4.0) 
+    # # van Genuchten params
+    # alpha_bnd = (1.15, 2000) # inverse of air entry suction
+    # n_bnd = (1.1, 5.0) # porosity
+    # K_bnd = (0.000864, 864) # hydro. conduct.
 
     # Put the into one list
     bounds = [b1_bnd, # organic horizont
@@ -312,26 +316,29 @@ if __name__ == '__main__':
         polish=False   
     )
 
-   # STAGE TWO FROM BEST FOUND 
-    x_best = np.array([
-        0.7066075248489605,
-        4.000952981933188,
-        3.1634828016964063,
-        0.610669128869678,
-        5.796028622986176,
-        2.0409742877617933,
-        1335.3244091938848,
-        4.784649120391409,
-        93.38526453060149,
-        68.36381671191975,
-        1.1344025499205599,
-        702.771330982797
-    ])
+    # Shrink the bound around the calculated best case
+    refined_bounds = shrink_bounds(result_stage1.x, bounds, shrink=0.15)
+    init_pop = jitter_init(result_stage1.x, refined_bounds, rel=0.05, size=16)
 
-    # Shrink the bound around best case
-    # refined_bounds = shrink_bounds(result_stage1.x, bounds, shrink=0.15)
-    refined_bounds = shrink_bounds(x_best, bounds, shrink=0.15)
-    init = np.tile(x_best, (8 * len(bounds), 1))
+   # STAGE TWO FROM BEST FOUND 
+    # x_best = np.array([
+        # 0.7066075248489605,
+        # 4.000952981933188,
+        # 3.1634828016964063,
+        # 0.610669128869678,
+        # 5.796028622986176,
+        # 2.0409742877617933,
+        # 1335.3244091938848,
+        # 4.784649120391409,
+        # 93.38526453060149,
+        # 68.36381671191975,
+        # 1.1344025499205599,
+        # 702.771330982797
+    # ])
+    # Shrink the bound around the known best case
+    # refined_bounds = shrink_bounds(x_best, bounds, shrink=0.15)
+    # init = np.tile(x_best, (8 * len(bounds), 1))
+    # init_pop = jitter_init(x_best, refined_bounds, rel=0.05, size=16)
 
     # Define log header for stage 2
     with open("de_log.txt", "a") as f:
@@ -343,36 +350,19 @@ if __name__ == '__main__':
                 "alpha_org \t n_org \t K_org \t"+
                 "alpha_min \t n_min \t K_min \n")
 
-    # # Second stage run - Finetune best case
-    # result_stage2 = differential_evolution(
-        # runDrutes,
-        # refined_bounds,
-        # strategy='best1bin',
-        # popsize=16,
-        # mutation=(0.15, 0.5),
-        # recombination=0.9,
-        # tol=1e-4,
-        # maxiter=1500,
-        # workers=-1,
-        # updating='deferred',
-        # polish=True,   # allow local polishing
-        # # init=[result_stage1.x] # start from the best find
-        # init=init # start from the best find
-    # )
-
-    init_pop = jitter_init(x_best, refined_bounds, rel=0.05, size=16)
-
     result_stage2 = differential_evolution(
         runDrutes,
         refined_bounds,
         strategy='best1bin',
-        popsize=1,          # IMPORTANT: population is given explicitly
+        popsize=1,          
         mutation=(0.1, 0.4),
         recombination=0.9,
         tol=1e-5,
         maxiter=300,
         workers=-1,
         updating='deferred',
-        polish=False,
+        polish=True,
         init=init_pop
     )
+
+    print("FINISHED!!!")

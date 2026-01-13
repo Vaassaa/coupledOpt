@@ -178,16 +178,31 @@ if __name__ == '__main__':
         715.3293287098194
     ])
 
+    pars = np.array([
+        0.6620194587999466,
+        5.86750732039099,
+        3.0690358297108373,
+        0.6232679080018616,
+        3.3794070571376054,
+        3.3417255804783776,
+        1915.3046923452625,
+        4.490952362284039,
+        298.0170366383968,
+        802.6518528004558,
+        1.627780169759907,
+        445.69436596666105
+    ])
+
     # Run simulation with ^ parameters
-    runDrutes(pars)
+    # runDrutes(pars)
     
     # Get simulated and measured values
     measured, simulated = getData("drutes_run/")
 
     fig, ax = plt.subplots()
-    ax.plot(measured['theta_8n'])
-    ax.plot(simulated['theta_8n'])
-    fig.savefig("theta_8n.png")
+    ax.plot(measured['T_8n'])
+    ax.plot(simulated['T_8n'])
+    fig.savefig("T_8n.png")
     plt.show()
     # column_names = [
             # "time",
