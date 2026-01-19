@@ -37,9 +37,9 @@ def log_run(call_id, error, error_heat, error_moist, par, logfile="de_log.txt"):
     line = (
         f"{call_id}\t"
         f"{timestamp}\t"
-        f"{error:.8g}\t"
-        f"{error_heat:.8g}\t"
-        f"{error_moist:.8g}\t"
+        f"{error:.8f}\t"
+        f"{error_heat:.8f}\t"
+        f"{error_moist:.8f}\t"
         + "\t".join(map(str, par))
         + "\n"
     )
@@ -141,18 +141,19 @@ def getError(run_dir):
     # Omit NaNs if present
     diff = diff.dropna()
 
-    # Compute normalization constants from measurements
-    norm = {}
-    for col in diff.columns:
-        norm[col] = measured[col].std()
-
-    # Normalize residuals (dimensionless)
-    for col in diff.columns:
-        diff[col] = diff[col] / norm[col]
+    # Physical normalization scales
+    sigma_T = 1.0       # °C
+    sigma_theta = 0.05  # [-]
 
     # Split by physics
     heat_cols = ["T_8n", "T_15n", "T_23n"]
     moisture_cols = ["theta_8n", "theta_23n"]
+
+    for col in heat_cols:
+        diff[col] /= sigma_T
+
+    for col in moisture_cols:
+        diff[col] /= sigma_theta
 
     # Compute separate errors
     error_heat = np.sqrt(np.mean(diff[heat_cols].values**2))
@@ -186,13 +187,19 @@ def runDrutes(par):
     alpha_org = par[6] #  inverse of the air entry suction
     n_org = par[7]  # porosity
     m_org = 1 - 1/n_org
-    K_org = par[8] # hydra. conduct.
+    K_org = par[8] # hydra. conduct. logaritmic scale
 
     # mineral 
-    alpha_min = par[9]
+    alpha_min = par[9] # logaritmic scale
     n_min = par[10]
     m_min = 1 - 1/n_min
-    K_min = par[11]
+    K_min = par[11] # logaritmic scale
+
+    # logaritmic scale
+    alpha_org = 10**par[6]
+    alpha_min = 10**par[9]
+    K_org = 10**par[8]
+    K_min = 10**par[11]
 
     # call counter
     with counter_lock:
@@ -251,6 +258,7 @@ def jitter_init(x, bounds, rel=0.05, size=16):
 
 
 if __name__ == '__main__':
+   # INITIAL PARAMETER SPACE SEARCH
     # Define bounds for the optimization parameters
     # thermal coef. params
     b1_bnd = (0.02, 1.0) 
@@ -260,20 +268,10 @@ if __name__ == '__main__':
     alpha_bnd = (1, 10) # [1/m] inverse of air entry suction
     n_bnd = (1.05, 3.0) # [-] porosity
     K_bnd = (1.0e-7, 3.0e-4) # [m/s] hydro. conduct.
-    # # van Genuchten params
-    # alpha_bnd = (0.15, 2000) # inverse of air entry suction
-    # n_bnd = (1.1, 5.0) # porosity
-    # K_bnd = (0.000864, 864) # hydro. conduct.
 
-    # # Better guess I guess?
-    # # thermal coef. params
-    # b1_bnd = (0.02, 1.0) 
-    # b2_bnd = (3.02, 6.0) 
-    # b3_bnd = (1.02, 4.0) 
-    # # van Genuchten params
-    # alpha_bnd = (1.15, 2000) # inverse of air entry suction
-    # n_bnd = (1.1, 5.0) # porosity
-    # K_bnd = (0.000864, 864) # hydro. conduct.
+    # van Genuchten params logaritmic
+    alpha_bnd = (np.log10(1), np.log10(10)) # [1/m] inverse of air entry suction
+    K_bnd = (np.log10(1.0e-7), np.log10(3.0e-4)) # [m/s] hydro. conduct.
 
     # Put the into one list
     bounds = [b1_bnd, # organic horizont
@@ -293,20 +291,19 @@ if __name__ == '__main__':
     # Define log header for stage 1
     with open("de_log.txt", "a") as f:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        f.write(f"OPTIMALIZATION LOG --- STAGE 1 --- {timestamp} \n"+
+        f.write(f"\nOPTIMALIZATION LOG --- STAGE 1 --- {timestamp} \n"+
                 "call_id \t timestamp \t error \t error_heat \t error_moist \t"+
-                "b1_org \t b2_org \t b3_org \t"+
-                "b1_min \t b2_min \t b3_min \t"+
-                "alpha_org \t n_org \t K_org \t"+
-                "alpha_min \t n_min \t K_min \n")
+                "b1_org[W/(m.K)] \t b2_org[W/(m.K)] \t b3_org[W/(m.K)] \t"+
+                "b1_min[W/(m.K)] \t b2_min[W/(m.K)] \t b3_min[W/(m.K)] \t"+
+                "alpha_org[1/m] \t n_org[-] \t K_org[m/s] \t"+
+                "alpha_min[1/m] \t n_min[-] \t K_min[m/s] \n")
 
     # Run differential evolution optimization in parallel
-    # First stage run - Aggresive search
     result_stage1 = differential_evolution(
         runDrutes,
         bounds,
         strategy='rand1bin',
-        popsize=32,
+        popsize=16,
         mutation=(0.6, 1.2),
         recombination=0.8,
         tol=1e-3,
@@ -316,40 +313,22 @@ if __name__ == '__main__':
         polish=False   
     )
 
+   # FINETUNING BEST PARAMS
     # Shrink the bound around the calculated best case
     refined_bounds = shrink_bounds(result_stage1.x, bounds, shrink=0.15)
     init_pop = jitter_init(result_stage1.x, refined_bounds, rel=0.05, size=16)
 
-   # STAGE TWO FROM BEST FOUND 
-    # x_best = np.array([
-        # 0.7066075248489605,
-        # 4.000952981933188,
-        # 3.1634828016964063,
-        # 0.610669128869678,
-        # 5.796028622986176,
-        # 2.0409742877617933,
-        # 1335.3244091938848,
-        # 4.784649120391409,
-        # 93.38526453060149,
-        # 68.36381671191975,
-        # 1.1344025499205599,
-        # 702.771330982797
-    # ])
-    # Shrink the bound around the known best case
-    # refined_bounds = shrink_bounds(x_best, bounds, shrink=0.15)
-    # init = np.tile(x_best, (8 * len(bounds), 1))
-    # init_pop = jitter_init(x_best, refined_bounds, rel=0.05, size=16)
-
     # Define log header for stage 2
     with open("de_log.txt", "a") as f:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        f.write(f"OPTIMALIZATION LOG --- STAGE 2 --- {timestamp} \n"+
+        f.write(f"\nOPTIMALIZATION LOG --- STAGE 2 --- {timestamp} \n"+
                 "call_id \t timestamp \t error \t error_heat \t error_moist \t"+
-                "b1_org \t b2_org \t b3_org \t"+
-                "b1_min \t b2_min \t b3_min \t"+
-                "alpha_org \t n_org \t K_org \t"+
-                "alpha_min \t n_min \t K_min \n")
+                "b1_org[W/(m.K)] \t b2_org[W/(m.K)] \t b3_org[W/(m.K)] \t"+
+                "b1_min[W/(m.K)] \t b2_min[W/(m.K)] \t b3_min[W/(m.K)] \t"+
+                "alpha_org[1/m] \t n_org[-] \t K_org[m/s] \t"+
+                "alpha_min[1/m] \t n_min[-] \t K_min[m/s] \n")
 
+    # Run differential evolution optimization in parallel
     result_stage2 = differential_evolution(
         runDrutes,
         refined_bounds,

@@ -26,12 +26,19 @@ def load_and_process(path):
     # Example: full looks like:
     #   ID1.T1  ID1.T2  ID1.T3  ID1.moisture  ID2.T1 ...
     #   with MultiIndex columns (ID, parameter)
+    for sensor_id, g in sensor_dfs.items():
+        T_cols = [c for c in g.columns if c in ["T1", "T2", "T3"]]
+        print(
+            f"Sensor {sensor_id} max T:",
+            g[T_cols].max().max()
+        )
 
     # --- Compute averages across sensors ---
     T_cols = [c for c in full.columns if c[1] in ["T1", "T2", "T3"]]
     theta_cols = [c for c in full.columns if c[1] == "moisture"]
 
     full["T_avg"] = full[T_cols].mean(axis=1)
+    print("Max T_avg before resampling:", full["T_avg"].max())
     full["theta_avg"] = full[theta_cols].mean(axis=1)
 
     # Keep only average columns
@@ -39,6 +46,18 @@ def load_and_process(path):
 
     # --- Resample to 10 min ---
     result = result.resample("10min").interpolate()
+    print("Max T_avg after resampling:", result["T_avg"].max())
+
+    import matplotlib.pyplot as plt
+
+    plt.figure(figsize=(10,4))
+    for c in T_cols:
+        plt.plot(full.index, full[c], color="gray", alpha=0.3)
+
+    plt.plot(full.index, full["T_avg"], color="red", lw=2)
+    plt.ylabel("Temperature [°C]")
+    plt.title("Sensor temperatures and averaged signal")
+    plt.show()
 
     return result
 
@@ -75,7 +94,7 @@ import os
 os.makedirs("out", exist_ok=True)
 
 # File path
-out_file = "out/monitoring.dat"
+out_file = "setup_out/monitoring.dat"
 
 # Write header manually
 with open(out_file, "w") as f:
