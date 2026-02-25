@@ -19,14 +19,14 @@
 
 # ------begin albedo method -----
 
-#1 - read data from drutes.conf/evaporation/albedo.conf
+#1 - read data from drutes.conf/evaporation/albedo.dat
 #2 - compute albedo from surface water content
-2
+1
 
 #if option 2 provide the following input (otherwise comment it out) (!!careful not to create discontinuity in albedo!!)
 # low theta_top [-]  high theta_top [-]    albedo_min [-]    albedo_max [-]   A
 #--------------------------------------------------------------------------------
-0.1                0.25                    0.1              0.25        0.35  
+#0.1                0.25                    0.1              0.25        0.35  
 
 #-----end albedo method ------
 
@@ -52,4 +52,3 @@ IDSO
 #----------------------------------------------------------------------------------------------------------------------------------------------------
 #day of simulation   latitude [dg]      sunset hour angle [dg]       solar declination [dg]    time of solar noon [hrs]
 1           10              0                  13                        12
-#

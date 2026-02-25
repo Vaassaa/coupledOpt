@@ -19,16 +19,20 @@ b1_min=$4
 b2_min=$5
 b3_min=$6
 
-# water module
-alpha_org=$7
-n_org=$8
-m_org=$9
-K_org=${10}
+albedo=$7
 
-alpha_min=${11}
-n_min=${12}
-m_min=${13}
-K_min=${14}
+# water module
+alpha_org=$8
+n_org=$9
+m_org=$10
+K_org=${11}
+
+alpha_min=${12}
+n_min=${13}
+m_min=${14}
+K_min=${15}
+
+S_max=${16}
 
 ###########################################
 # CREATE evap.conf
@@ -43,6 +47,13 @@ sed \
     drutes.conf/evaporation/evap.conf.temp > drutes.conf/evaporation/evap.conf
 
 ###########################################
+# CREATE albedo.dat
+###########################################
+sed \ 
+	-e "s/!albedo/$albedo/g" \
+	drutes.conf/evaporation/albedo.dat.temp > drutes.conf/evaporation/albedo.dat
+
+###########################################
 # CREATE water.conf
 ###########################################
 sed \
@@ -55,6 +66,13 @@ sed \
     -e "s/!m_min/$m_min/g" \
     -e "s/!K_min/$K_min/g" \
     drutes.conf/water.conf/matrix.conf.temp > drutes.conf/water.conf/matrix.conf
+
+###########################################
+# CREATE root4uptake.conf
+###########################################
+sed \ 
+	-e "s/!S_max/$S_max/g" \
+    drutes.conf/water.conf/root4uptake.conf.temp > drutes.conf/water.conf/root4uptake.cong
 
 ###########################################
 # RUN DRUTES

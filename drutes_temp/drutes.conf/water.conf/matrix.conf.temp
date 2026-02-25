@@ -59,7 +59,7 @@ y
 0                  !K_min
 
 # use root water uptake [y/n] (if yes specify values in root.conf)
-n
+y
 
 
 

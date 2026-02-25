@@ -148,20 +148,25 @@ def runDrutes(par):
     b3_min = par[5]
     print(f"Mineral: {b1_min} | {b2_min} | {b3_min}\n")
 
+    # albedo
+    albedo_start = par[6]
+    albedo_end = par[7]
+    print(f"Albedo: {albedo_start} | {albedo_end}\n")
+
     print(f"Van Genuchten parameters: [ alpha | n | m | K ]\n")
     # water module
     # organic
-    alpha_org = par[6] #  inverse of the air entry suction
-    n_org = par[7]  # porosity
+    alpha_org = par[8] #  inverse of the air entry suction
+    n_org = par[9]  # porosity
     m_org = 1 - 1/n_org
-    K_org = par[8] # hydra. conduct.
+    K_org = par[10] # hydra. conduct.
     print(f"Organic: {alpha_org} | {n_org} | {m_org} | {K_org}\n")
 
     # mineral 
-    alpha_min = par[9]
-    n_min = par[10]
+    alpha_min = par[11]
+    n_min = par[12]
     m_min = 1 - 1/n_min
-    K_min = par[11]
+    K_min = par[13]
     print(f"Mineral: {alpha_min} | {n_min} | {m_min} | {K_min}\n")
     print("-------------------------------------------\n")
 
@@ -173,6 +178,8 @@ def runDrutes(par):
            str(b1_min),
            str(b2_min),
            str(b3_min),
+           str(albedo_start),
+           str(albedo_end),
            str(alpha_org),
            str(n_org),
            str(m_org),
@@ -211,6 +218,8 @@ if __name__ == '__main__':
     b1_bnd = (0.02, 1.0) 
     b2_bnd = (0.02, 6.0) 
     b3_bnd = (0.02, 4.0) 
+    # albedo
+    albedo_bnd = (0.02, 0.99) 
     # van Genuchten params
     K_bnd = (0.000864, 864) # hydro. conduct.
     alpha_bnd = (0.15, 2000) # inverse of air entry suction
@@ -222,6 +231,8 @@ if __name__ == '__main__':
               b1_bnd, # mineral horizont
               b2_bnd,
               b3_bnd,
+              albedo_bnd, # albedo
+              albedo_bnd,
               alpha_bnd, # organic horizont
               n_bnd,
               K_bnd,
