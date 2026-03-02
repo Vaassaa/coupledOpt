@@ -24,7 +24,7 @@ albedo=$7
 # water module
 alpha_org=$8
 n_org=$9
-m_org=$10
+m_org=${10}
 K_org=${11}
 
 alpha_min=${12}
@@ -49,7 +49,7 @@ sed \
 ###########################################
 # CREATE albedo.dat
 ###########################################
-sed \ 
+sed \
 	-e "s/!albedo/$albedo/g" \
 	drutes.conf/evaporation/albedo.dat.temp > drutes.conf/evaporation/albedo.dat
 
@@ -70,7 +70,7 @@ sed \
 ###########################################
 # CREATE root4uptake.conf
 ###########################################
-sed \ 
+sed \
 	-e "s/!S_max/$S_max/g" \
     drutes.conf/water.conf/root4uptake.conf.temp > drutes.conf/water.conf/root4uptake.cong
 

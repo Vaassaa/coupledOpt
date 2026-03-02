@@ -155,21 +155,39 @@ def getError(run_dir):
 
     # Peak Weight: 1.0 at the lowest temp, 2.0 at the highest peak
     # weight = 1 + (T - T_min) / (T_max - T_min)
-    weights = 1.0 + (measured[heat_cols] - T_min) / (T_max - T_min)
+    weights_T = 1.0 + (measured[heat_cols] - T_min) / (T_max - T_min)
 
-    # Physical normalization scales
-    sigma_T = 1.0       # °C
-    sigma_theta = 0.05  # [-]
+    # Calculate a Weight Vector based on the Intensity of the signal
+    theta_min = measured[moisture_cols].min().min()
+    theta_max = measured[moisture_cols].max().max()
+
+# Physical normalization scales
+    sigma_T     = 1.0    # °C
+    sigma_theta = 0.05   # [-]
+
+    # Weighted heat: signal-intensity weight + depth weight
+    depth_weights_heat  = {"T_8n": 3.0, "T_15n": 1.5, "T_23n": 1.0}
+    depth_weights_moist = {"theta_8n": 3.0, "theta_23n": 1.0}
+
+    for col in heat_cols:
+        diff[col] = (diff[col] / sigma_T) * weights_T[col] * depth_weights_heat[col]
+
+    for col in moisture_cols:
+        diff[col] = (diff[col] / sigma_theta) * depth_weights_moist[col]
+
+    # # Physical normalization scales
+    # sigma_T = 1.0       # °C
+    # sigma_theta = 0.05  # [-]
 
     # for col in heat_cols:
         # diff[col] /= sigma_T
 
-    # Weighted heat approach
-    for col in heat_cols:
-        diff[col] = (diff[col] / sigma_T) * weights[col]
+    # # Weighted heat approach
+    # for col in heat_cols:
+        # diff[col] = (diff[col] / sigma_T) * weights_T[col]
 
-    for col in moisture_cols:
-        diff[col] /= sigma_theta
+    # for col in moisture_cols:
+        # diff[col] /= sigma_theta
 
     # Compute separate errors
     error_heat = np.sqrt(np.mean(diff[heat_cols].values**2))
@@ -276,15 +294,15 @@ def runDrutes_subset(par_subset):
     Executes the simulation with a given subset of parameters.
     Parallel execution.
     """
-    
     # Reconstruct the full parameter set 
-    b1_org = FIXED_PARAMS["b1_org"]
-    # b1_org = par_subset[0] 
+    # b1_org = FIXED_PARAMS["b1_org"]
+    b1_org = par_subset[0] 
     b2_org = FIXED_PARAMS["b2_org"]
-    b3_org = FIXED_PARAMS["b3_org"]
+    # b3_org = FIXED_PARAMS["b3_org"]
+    b3_org = par_subset[1]
     
-    b1_min = FIXED_PARAMS["b1_min"]
-    # b1_min = par_subset[1]
+    # b1_min = FIXED_PARAMS["b1_min"]
+    b1_min = par_subset[2]
     b2_min = FIXED_PARAMS["b2_min"]
     b3_min = FIXED_PARAMS["b3_min"]
     # b3_min = par_subset[2]
@@ -292,12 +310,12 @@ def runDrutes_subset(par_subset):
     albedo = FIXED_PARAMS["albedo"]
     
     # Water module - Organic
-    # alpha_org = 10**FIXED_PARAMS["alpha_org"]
-    alpha_org = 10**par_subset[0]
-    # n_org     = FIXED_PARAMS["n_org"]
-    n_org     = par_subset[1]
-    # K_org     = 10**FIXED_PARAMS["K_org"]
-    K_org     = 10**par_subset[2]
+    alpha_org = 10**FIXED_PARAMS["alpha_org"]
+    # alpha_org = 10**par_subset[0]
+    n_org     = FIXED_PARAMS["n_org"]
+    # n_org     = par_subset[1]
+    K_org     = 10**FIXED_PARAMS["K_org"]
+    # K_org     = 10**par_subset[2]
     m_org     = 1 - 1/n_org
     
     # Water module - Mineral
@@ -310,8 +328,8 @@ def runDrutes_subset(par_subset):
     m_min     = 1 - 1/n_min
     
     # Root uptake 
-    # S_max     = 10**FIXED_PARAMS["S_max"]
-    S_max     = 10**par_subset[6]
+    S_max     = 10**FIXED_PARAMS["S_max"]
+    # S_max     = 10**par_subset[6]
 
     # Call counter
     with counter_lock:
@@ -333,9 +351,9 @@ def runDrutes_subset(par_subset):
     
     try:
         #  Adjust timeout based on normal run time.
-        # proc = subprocess.run(cmd, timeout=900, check=True, 
-                              # stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        proc = subprocess.run(cmd, check=True) 
+        proc = subprocess.run(cmd, timeout=900, check=True, 
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # proc = subprocess.run(cmd, check=True) 
         
     except subprocess.TimeoutExpired:
         print(f"CRITICAL: Simulation {run_id} TIMED OUT. Assigning penalty error.")
@@ -415,8 +433,8 @@ if __name__ == '__main__':
     # Subset section first run on sensitivity 
     FIXED_PARAMS = {
         "b2_org": 0.872773,
-        "b3_org": 0.0722514,
         "b2_min": 0.854659, 
+        "b3_min": 1.4491847,
         "albedo": 0.18,
         "alpha_org": np.log10(4.9273),
         "n_org": 2.09486,
@@ -438,8 +456,8 @@ if __name__ == '__main__':
                      b1_min_bnd,
                      b3_org_bnd,
                      alpha_min_bnd,
-                     K_min_bnd,
-                     n_min_bnd]
+                     n_min_bnd,
+                     K_min_bnd]
     # Defines the log header of what vars were calibrated
     display_subset = ["b1_org", 
                       "b1_min",
@@ -448,41 +466,37 @@ if __name__ == '__main__':
                       "K_min",
                       "n_min"]
 
-    # Subset section second run on moisture only
-    FIXED_PARAMS = {
-        "b1_org": 0.088666175,
-        "b2_org": 0.872773,
-        "b3_org": 0.0722514,
-        "b1_min": 0.032254263,
-        "b2_min": 0.854659,
-        "b3_min": 1.4491847,
-        "albedo": 0.18,
-    }
+    # # Subset section second run on moisture only
+    # FIXED_PARAMS = {
+        # "b1_org": 0.088666175,
+        # "b2_org": 0.872773,
+        # "b3_org": 0.0722514,
+        # "b1_min": 0.032254263,
+        # "b2_min": 0.854659,
+        # "b3_min": 1.4491847,
+        # "albedo": 0.18,
+        # "alpha_org": np.log10(4.9273),
+        # "n_org": 2.09486,
+        # "K_org": np.log10(5.49161e-5),
+        # "S_max": np.log10(1.79521e-08)
+    # }
 
-    # Define bounds for subset
-    # van Genuchten params logaritmic
-    alpha_org_bnd = (np.log10(3), np.log10(8)) # [1/m] inverse of air entry suction
-    n_org_bnd = (1.65, 2.5) # [-] mineral porosity
-    K_org_bnd = (np.log10(1.0e-6), np.log10(10.0e-4)) # [m/s] hydro. conduct.
-    alpha_min_bnd = (np.log10(1), np.log10(3)) # [1/m] inverse of air entry suction
-    n_min_bnd = (1.05, 2.0) # [-] mineral porosity
-    K_min_bnd = (np.log10(1.0e-8), np.log10(10.0e-5)) # [m/s] hydro. conduct.
-    S_max_bnd = (np.log10(1e-9), np.log10(10e-7)) # [m/s] maximum root uptake
-    bounds_subset = [alpha_org_bnd, 
-                     n_org_bnd,
-                     K_org_bnd,
-                     alpha_min_bnd,
-                     n_min_bnd,
-                     K_min_bnd,
-                     S_max_bnd]
-    # Defines the log header of what vars were calibrated
-    display_subset = ["alpha_org",
-                      "n_org",
-                      "K_org",
-                      "alpha_min",
-                      "K_min",
-                      "n_min",
-                      "S_max"]
+    # # Define bounds for subset
+    # # van Genuchten params logaritmic
+    # alpha_org_bnd = (np.log10(3), np.log10(5)) # [1/m] inverse of air entry suction
+    # n_org_bnd = (2.05, 2.5) # [-] mineral porosity
+    # K_org_bnd = (np.log10(1.0e-6), np.log10(10.0e-4)) # [m/s] hydro. conduct.
+    # alpha_min_bnd = (np.log10(1), np.log10(5)) # [1/m] inverse of air entry suction
+    # n_min_bnd = (1.05, 4.0) # [-] mineral porosity
+    # K_min_bnd = (np.log10(1.0e-9), np.log10(10.0e-4)) # [m/s] hydro. conduct.
+    # S_max_bnd = (np.log10(1e-9), np.log10(10e-7)) # [m/s] maximum root uptake
+    # bounds_subset = [alpha_min_bnd,
+                     # n_min_bnd,
+                     # K_min_bnd]
+    # # Defines the log header of what vars were calibrated
+    # display_subset = ["alpha_min",
+                      # "K_min",
+                      # "n_min"]
 
     # ========================
     # Optimalization procedure
@@ -579,7 +593,7 @@ if __name__ == '__main__':
                mutation=(0.6, 1.9),
                recombination=0.8,
                tol=1e-3,
-               maxiter=100,
+               maxiter=10,
                workers=-1,
                updating='deferred',
                polish=True   

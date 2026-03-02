@@ -379,6 +379,10 @@ if __name__ == '__main__':
     1.79521e-08,
         ])
 
+    # pars = np.loadtxt('best_guess_moist.in')
+    pars = np.loadtxt('best_guess_moist3.in')
+    print(pars)
+
 
     # # Run simulation with ^ parameters
     match run:
@@ -393,6 +397,8 @@ if __name__ == '__main__':
             ax.plot(measured[var])
             ax.plot(simulated[var])
             # ax.set_ylim([0,0.25])
+            # ax.set_ylim([0,0.5225]) # theta_s organic
+            # ax.set_ylim([0,0.4200]) # theta_s mineral
             fig.savefig("figs/best_"+var)
             plt.show()
             # column_names = [
