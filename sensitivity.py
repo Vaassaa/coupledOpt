@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # 1. Load the data, skipping the comment line
-df = pd.read_csv('de_log_analysis.csv', comment='#')
+df = pd.read_csv('de_log_anal_moisture_weigh.csv', comment='#')
 df.columns = df.columns.str.strip()
 
 # 2. Linearize the log10 parameters (alpha_org, alpha_min, K_min, K_org, S_max)
@@ -50,7 +50,7 @@ plt.title('Sensitivity Analysis: Parameters vs. Errors', pad=20)
 plt.tight_layout()
 
 # Save the finalized figure
-plt.savefig('balanced_sensitivity_heatmap2.png', bbox_inches='tight')
+plt.savefig('balanced_sensitivity_heatmap3.png', bbox_inches='tight')
 # 6. Print to terminal with clear labeling
 print("\n" + "="*50)
 print("SENSITIVITY ANALYSIS: SPEARMAN CORRELATION MATRIX")

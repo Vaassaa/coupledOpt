@@ -167,10 +167,11 @@ def getError(run_dir):
 
     # Weighted heat: signal-intensity weight + depth weight
     depth_weights_heat  = {"T_8n": 3.0, "T_15n": 1.5, "T_23n": 1.0}
-    depth_weights_moist = {"theta_8n": 3.0, "theta_23n": 1.0}
+    depth_weights_moist = {"theta_8n": 2.0, "theta_23n": 1.0}
 
     for col in heat_cols:
-        diff[col] = (diff[col] / sigma_T) * weights_T[col] * depth_weights_heat[col]
+        # diff[col] = (diff[col] / sigma_T) * weights_T[col] * depth_weights_heat[col]
+        diff[col] = (diff[col] / sigma_T) * weights_T[col]
 
     for col in moisture_cols:
         diff[col] = (diff[col] / sigma_theta) * depth_weights_moist[col]
@@ -590,10 +591,10 @@ if __name__ == '__main__':
                bounds_subset,
                strategy='rand1bin',
                popsize=16,
-               mutation=(0.6, 1.9),
+               mutation=(0.3, 1.8),
                recombination=0.8,
                tol=1e-3,
-               maxiter=10,
+               maxiter=80,
                workers=-1,
                updating='deferred',
                polish=True   
