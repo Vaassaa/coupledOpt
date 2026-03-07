@@ -4,3 +4,4 @@ dataIN/
 figs/
 *.png
 *.tar.gz
+__pycache__/
