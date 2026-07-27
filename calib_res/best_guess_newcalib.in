@@ -1,0 +1,26 @@
+# best guess array of optimalizatized parameters
+# check the calibration script on what vars are in in log10!
+# iteration;timestamp;
+# 284909 2026-03-15 10:16:47 
+# error;error_heat;error_moist;
+# 1.462266 0.89701755 1.154808
+# b1_org[W/(m.K)];b2_org[W/(m.K)];b3_org[W/(m.K)];
+# b1_min[W/(m.K)];b2_min[W/(m.K)];b3_min[W/(m.K)];
+# albedo[-];
+# alpha_org[1/m];n_org[-];K_org[m/s];
+# alpha_min[1/m];n_min[-];K_min[m/s];
+# S_max[m/s]
+0.079349305
+0.872773
+0.25415288
+0.37333081
+0.854659
+1.4491847
+0.07162545
+3.2891762
+2.2638024
+5.49161e-05
+4.0843438
+1.2799701
+0.000183719
+1.79521e-08

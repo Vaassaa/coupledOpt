@@ -1,5 +1,7 @@
 drutes_run/
 drutes_run_*/
+drutes_temp/bin/
+drutes_temp/out/
 dataIN/
 figs/
 *.png

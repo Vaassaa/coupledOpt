@@ -1,0 +1,33 @@
+#!/bin/bash
+#PBS -N calib_spruce
+#PBS -l select=1:ncpus=64:mem=128gb
+#PBS -l walltime=96:00:00
+#PBS -j oe
+#PBS -o calib_spruce.out
+#PBS -m abe
+
+cd $PBS_O_WORKDIR || exit 1
+
+# Prevent thread oversubscription: DRUtES links against OpenMP/BLAS.
+# Each of the 64 Python workers spawns drutes; without these each drutes
+# instance would try to use all cores, creating 64*N_core threads.
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export VECLIB_MAXIMUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
+# Activate conda/mamba environment.
+# Activate by explicit prefix on plzen1 (where the job runs) so it does not
+# matter which storage $HOME/.conda/envs resolves to inside the PBS batch shell.
+# (A previous run silently fell through to system Python -> ModuleNotFoundError.)
+module add mambaforge 2>/dev/null || true
+source "$(conda info --base)/etc/profile.d/conda.sh"
+mamba activate /storage/plzen1/home/vstein/.conda/envs/coupledOpt || {
+    echo "ERROR: cannot activate coupledOpt env"; exit 1; }
+python -c "import pandas, numpy, scipy" || {
+    echo "ERROR: coupledOpt env is missing required packages"; exit 1; }
+
+# STAGE is passed at submission time: qsub -v STAGE=broad de_spruce.pbs
+# Available stages: broad | fine | subset | subset-fine | subset-finer
+python run_calibration_spruce.py "${STAGE:?ERROR: STAGE variable not set. Submit with: qsub -v STAGE=broad de_spruce.pbs}"

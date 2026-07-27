@@ -1,16 +1,17 @@
 """
-Python script for optimalization of parameters
-of Saito-Sakai model for modeling of soil temperature
-and moisture regime in a forest location of the AMALIA pilot 
-intended to run on home workstation
+Python script for calibration of Saito-Sakai model
+parameters used for simulating soil temperature
+and moisture regime in a forest location of 
+the AMALIA pilot site. 
 Author: Vaclav Steinbach
 Date: 03.01.2026
 Dissertation work
+@@@ Intended to run on home workstation @@@
 """
 import numpy as np
 import pandas as pd
 import subprocess
-from scipy.optimize import differential_evolution
+from scipy.optimize import differential_evolution, minimize
 from uuid import uuid4
 from datetime import datetime
 import shutil
@@ -18,6 +19,8 @@ from multiprocessing import Value, Lock
 import sys
 from calibration_tools import log_run, calcHydraulicHead, shrink_bounds, jitter_init
 from functools import partial
+from concurrent.futures import ProcessPoolExecutor
+import os
 
 # set optimalization strategy
 stage = sys.argv[1]
@@ -101,6 +104,8 @@ def getError(run_dir):
         df.index = df.index.astype(int)
         # convert s -> datetime (for resampling)
         df.index = pd.to_timedelta(df.index, unit="s", errors="coerce")
+        # drop duplicates
+        df = df[~df.index.duplicated(keep='last')]
         # drop NaNs
         df = df.dropna()
         # resample to 10 min
@@ -140,10 +145,12 @@ def getError(run_dir):
         df.index = df.index.astype(float).round().astype(int)
         # convert s -> datetime (for resampling)
         df.index = pd.to_timedelta(df.index, unit="s", errors="coerce")
+        # drop duplicates
+        df = df[~df.index.duplicated(keep='last')]
         # drop NaNs
         df = df.dropna()
         # resample to 10 min
-        df_res = df.resample('600s').interpolate()
+        df_res = df.resample('600s').mean()
         # convert timedelta idx back to seconds
         df_res.index = df_res.index.total_seconds().astype(int)
         # keep values only
@@ -168,36 +175,27 @@ def getError(run_dir):
     T_min = measured[heat_cols].min().min()
     T_max = measured[heat_cols].max().max()
 
-    # Peak Weight: 1.0 at the lowest temp, 2.0 at the highest peak
-    # weight = 1 + (T - T_min) / (T_max - T_min)
-    weights_T = 1.0 + (measured[heat_cols] - T_min) / (T_max - T_min)
+    T_mean = measured[heat_cols].mean().mean()
+    T_range = (T_max - T_min) / 2  # half-range as normalizer
 
-    # Calculate a Weight Vector based on the Intensity of the signal
-    theta_min = measured[moisture_cols].min().min()
-    theta_max = measured[moisture_cols].max().max()
+    # Weight = 1.0 at mean, 2.0 at both extremes
+    weights_T = 1.0 + ((measured[heat_cols] - T_mean).abs() / T_range) # worked
+    # weights_T = 2.0 + ((measured[heat_cols] - T_mean).abs() / T_range)
 
-    # Physical normalization scales
-    sigma_T     = 1.0    # °C
-    sigma_theta = 0.05   # [-]
+    # Physical normalization # worked
+    sigma_T     = 1.0  # °C
+    sigma_theta = 0.05 # [-]
 
-    # Weighted heat: signal-intensity weight + depth weight
-    depth_weights_heat  = {"T_8n": 3.0, "T_15n": 1.5, "T_23n": 1.0}
-    depth_weights_moist = {"theta_8n": 2.0, "theta_23n": 1.0}
+    # Physical normalization based on signal variability
+    # sigma_T     = measured[heat_cols].std().mean()      # °C
+    # sigma_theta = measured[moisture_cols].std().mean()  # [-]
 
-    # Weighted peaks and depths approach
+    # Physical normalization and peak weighting approach
     for col in heat_cols:
-        # diff[col] = (diff[col] / sigma_T) * weights_T[col] * depth_weights_heat[col]
         diff[col] = (diff[col] / sigma_T) * weights_T[col]
 
     for col in moisture_cols:
-        diff[col] = (diff[col] / sigma_theta) * depth_weights_moist[col]
-
-    # Physical normalization approach
-    # for col in heat_cols:
-        # diff[col] /= sigma_T
-
-    # for col in moisture_cols:
-        # diff[col] /= sigma_theta
+        diff[col] = diff[col] / sigma_theta
 
     # Compute separate errors
     error_heat = np.sqrt(np.mean(diff[heat_cols].values**2))
@@ -211,10 +209,40 @@ def getError(run_dir):
     return error, error_heat, error_moist
 
     
-def runDrutes(strategy, par):
+def runDrutes(strategy, log, par):
     """
-    Executes the simulation with a given set of parameters.
-    Parallel execution.
+    Runs a single DRUtES simulation in a temporary directory and returns
+    the objective function error for use by the optimiser.
+
+    Unpacks `par` according to `strategy` — either the full 14-parameter
+    vector ("all") or a reduced subset with the remaining parameters drawn
+    from FIXED_PARAMS ("subset"). Log-scaled parameters (alpha, K, S_max)
+    are exponentiated before use. 
+
+    Before launching the simulation, hydraulic heads are computed for each
+    horizont from the initial soil-moisture readings. If either head is 
+    unphysically small (h < -1e-4), the run is aborted early and a penalty e
+    rror of is returned. The same penalty is returned on subprocess 
+    timeout (> 900 s) or non-convergence (non-zero exit code).
+
+    Each successful run is assigned a UUID-based working directory, results
+    are evaluated via `getError`, the call is logged via `log_run`, and the
+    working directory is removed on completion.
+
+    Parameters
+    ----------
+    strategy : {"all", "subset"}
+        Parameter unpacking mode. "all" optimises all 14 parameters;
+        "subset" fixes hydraulic and albedo parameters to FIXED_PARAMS
+        and optimises only the active thermal and mineral water parameters.
+    par : array-like
+        Optimiser parameter vector. Length and meaning depend on strategy.
+
+    Returns
+    -------
+    error : float
+        Combined weighted RMSE from `getError`, or 1e10 if the simulation
+        was killed, timed out, or crashed.
     """
     match strategy:
         case "all":
@@ -263,35 +291,36 @@ def runDrutes(strategy, par):
             # b3_org = FIXED_PARAMS["b3_org"]
             b3_org = par[1]
             
-            # b1_min = FIXED_PARAMS["b1_min"]
-            b1_min = par[2]
+            b1_min = FIXED_PARAMS["b1_min"]
+            # b1_min = par[2]
             b2_min = FIXED_PARAMS["b2_min"]
             b3_min = FIXED_PARAMS["b3_min"]
             # b3_min = par_subset[2]
 
-            albedo = FIXED_PARAMS["albedo"]
+            # albedo = FIXED_PARAMS["albedo"]
+            albedo = par[2]
             
             # Water module - Organic
-            alpha_org = 10**FIXED_PARAMS["alpha_org"]
-            # alpha_org = 10**par_subset[0]
-            n_org     = FIXED_PARAMS["n_org"]
-            # n_org     = par_subset[1]
-            K_org     = 10**FIXED_PARAMS["K_org"]
-            # K_org     = 10**par_subset[2]
+            # alpha_org = 10**FIXED_PARAMS["alpha_org"]
+            alpha_org = 10**par[3]
+            # n_org     = FIXED_PARAMS["n_org"]
+            n_org     = par[4]
+            # K_org     = 10**FIXED_PARAMS["K_org"]
+            K_org     = 10**par[5]
             m_org     = 1 - 1/n_org
             
             # Water module - Mineral
             # alpha_min = 10**FIXED_PARAMS["alpha_min"]
-            alpha_min = 10**par[3]
-            # n_min     = FIXED_PARAMS["n_min"]
-            n_min     = par[4]
+            alpha_min = 10**par[6]
+            n_min     = FIXED_PARAMS["n_min"]
+            # n_min     = par[7]
             # K_min     = 10**FIXED_PARAMS["K_min"]
-            K_min     = 10**par[5]
+            K_min     = 10**par[7]
             m_min     = 1 - 1/n_min
             
             # Root uptake 
-            S_max     = 10**FIXED_PARAMS["S_max"]
-            # S_max     = 10**par_subset[6]
+            # S_max     = 10**FIXED_PARAMS["S_max"]
+            S_max     = 10**par[8]
 
     # call counter
     with counter_lock:
@@ -313,11 +342,12 @@ def runDrutes(strategy, par):
     h_org = calcHydraulicHead(theta_org, [alpha_org, n_org, m_org])
     h_min = calcHydraulicHead(theta_min, [alpha_min, n_min, m_min])
 
-    # fix initial condition
-    if h_org < -1e-4 or h_min < -1e-4:
-        print(f"SIMULATION {run_id} killed early due to unrealistic hydraulic head:\n"+ 
-              +"h_org: {h_org} h_min: {h_min}\n"+
-              +"Assigning penalty error.")
+    # fix initial condition — reject heads drier than deep wilting point
+    if h_org < -500 or h_min < -500:
+        print(f"SIMULATION {run_id} killed early\n"+ 
+              "Unrealistic hydraulic head:\n"+
+              f"h_org: {h_org} h_min: {h_min}\n"+
+              "Assigning penalty error.")
         return 1e10  # Return massive error to move optimizer away
 
     # Build the command to run the shell script.
@@ -336,36 +366,49 @@ def runDrutes(strategy, par):
         proc = subprocess.run(cmd, timeout=900, check=True, 
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         # proc = subprocess.run(cmd, check=True) # with terminal output (DEBUG)
+
+        # Get the value of objective function
+        error, error_heat, error_moist = getError(run_dir)
+        print(f"SIMULATION {run_id} FINISHED!")
+        print(f"RUN {run_id} OBJECTIVE FUNCTION ERROR: {error}\n")
+
+        # Setup a list of params with correct units
+        full_par = [b1_org, b2_org, b3_org,
+                    b1_min, b2_min, b3_min, 
+                    albedo,
+                    alpha_org, n_org, K_org,
+                    alpha_min, n_min, K_min,
+                    S_max]
+        
+        # Chose to which file to log to
+        if log == "fine":
+            logfile = "finetune_log.csv"
+        elif log == "broad": 
+            logfile = "de_log.csv"
+        # Log finished run
+        log_run(call_id, error, error_heat, error_moist, full_par, logfile)
+        print(f"RUN {run_id} succesfully logged!")
         
     except subprocess.TimeoutExpired:
         print(f"CRITICAL: Simulation {run_id} TIMED OUT. Assigning penalty error.")
-        shutil.rmtree(run_dir, ignore_errors=True)
+        # shutil.rmtree(run_dir, ignore_errors=True) # save for later
+        # save runs for debugging purposes
+        os.makedirs("nonconvergent/", exist_ok=True)
+        dest = os.path.join("nonconvergent/", os.path.basename(run_dir))
+        shutil.move(run_dir, dest) # move to arch dir
+        # save only sim. configuration
+        shutil.rmtree(os.path.join(dest, "bin/"), ignore_errors=True)
+        shutil.rmtree(os.path.join(dest, "out/"), ignore_errors=True)
         return 1e10  # Return massive error to move optimizer away
         
     except subprocess.CalledProcessError as e:
         print(f"CRITICAL: Simulation {run_id} CRASHED (Non-convergence).")
         shutil.rmtree(run_dir, ignore_errors=True)
         return 1e10
-
-    # Get the value of objective function
-    error, error_heat, error_moist = getError(run_dir)
-    print(f"SIMULATION {run_id} FINISHED!")
-    print(f"RUN {run_id} OBJECTIVE FUNCTION ERROR: {error}\n")
-
-    # Setup a list of params with correct units
-    full_par = [b1_org, b2_org, b3_org,
-                b1_min, b2_min, b3_min, 
-                albedo,
-                alpha_org, n_org, K_org,
-                alpha_min, n_min, K_min,
-                S_max]
-    # Log finished run
-    log_run(call_id, error, error_heat, error_moist, full_par_for_log)
-    print(f"RUN {run_id} succesfully logged!")
-
-    # Remove temp dir 
-    shutil.rmtree(run_dir, ignore_errors=True)
-    print(f"RUN {run_id} working dir succesfully removed!")
+    finally:
+        # Remove temp dir 
+        shutil.rmtree(run_dir, ignore_errors=True)
+        print(f"RUN {run_id} working dir succesfully removed!")
     return error
 
 # ============================
@@ -400,10 +443,10 @@ if __name__ == '__main__':
               b3_bnd,
               albedo_bnd, # albedo
               alpha_bnd, # organic horizont
-              n_min_bnd,
+              n_org_bnd,
               K_bnd,
               alpha_bnd, # mineral horizont
-              n_org_bnd,
+              n_min_bnd,
               K_bnd,
               S_max_bnd
               ]
@@ -413,10 +456,8 @@ if __name__ == '__main__':
         "b2_org": 0.872773,
         "b2_min": 0.854659, 
         "b3_min": 1.4491847,
-        "albedo": 0.18,
-        "alpha_org": np.log10(4.9273),
-        "n_org": 2.09486,
         "K_org": np.log10(5.49161e-5),
+        "K_min": np.log10(0.000183719),
         "S_max": np.log10(1.79521e-08)
     }
 
@@ -426,23 +467,77 @@ if __name__ == '__main__':
     b1_min_bnd = (0.02, 3.0) 
     b3_org_bnd = (0.02, 6.0) 
 
+    albedo_bnd = (0.05, 0.3) 
+
     # van Genuchten params logaritmic
     alpha_min_bnd = (np.log10(1), np.log10(5)) # [1/m] inverse of air entry suction
-    K_min_bnd = (np.log10(1.0e-7), np.log10(10.0e-4)) # [m/s] hydro. conduct.
     n_min_bnd = (1.05, 2.0) # [-] mineral porosity
+    alpha_org_bnd = (np.log10(1), np.log10(6)) # [1/m] inverse of air entry suction
+    n_org_bnd = (1.05, 5.0) # [-] organic porosity
     bounds_subset = [b1_org_bnd, 
                      b1_min_bnd,
                      b3_org_bnd,
+                     albedo_bnd,
+                     alpha_org_bnd,
+                     n_org_bnd,
                      alpha_min_bnd,
-                     n_min_bnd,
-                     K_min_bnd]
+                     n_min_bnd]
     # Defines the log header of what vars were calibrated
     display_subset = ["b1_org", 
                       "b1_min",
                       "b3_org",
+                      "albedo",
+                      "alpha_org",
+                      "n_org",
                       "alpha_min",
-                      "K_min",
                       "n_min"]
+
+    # ===============
+    # --- SPRUCE ----
+    # ===============
+    # Subset section first run on sensitivity 
+    FIXED_PARAMS = {
+        "b2_org": 6.4152019,
+        "b1_min": 0.22083929,
+        "b2_min": 0.51442833, 
+        "b3_min": 0.51171692,
+        "n_min": 2.8750303
+    }
+
+    # Define bounds for subset
+    # thermal coef. params
+    b1_org_bnd = (0.02, 10.0) 
+    b3_org_bnd = (0.02, 10.0) 
+
+    # van Genuchten params logaritmic
+    alpha_org_bnd = (np.log10(1), np.log10(7)) # [1/m] inverse of air entry suction
+    n_org_bnd = (1.05, 6.0) # [-] organic porosity
+    K_org_bnd = (np.log10(1.0e-8), np.log10(10.0e-4))
+    albedo_bnd = (0.05, 1.0) 
+    alpha_min_bnd = (np.log10(1), np.log10(7)) # [1/m] inverse of air entry suction
+    K_min_bnd = (np.log10(1.0e-8), np.log10(10.0e-4)) # [m/s] hydro. conduct.
+    S_max_bnd = (np.log10(1e-9), np.log10(10e-6)) # [m/s] maximum root uptake
+    bounds_subset = [b1_org_bnd, 
+                     b3_org_bnd,
+                     albedo_bnd,
+                     alpha_org_bnd,
+                     n_org_bnd,
+                     K_org_bnd,
+                     alpha_min_bnd,
+                     K_min_bnd,
+                     S_max_bnd
+                     ]
+    # Defines the log header of what vars were calibrated
+    display_subset = ["b1_org_bnd", 
+                      "b3_org_bnd",
+                      "albedo",
+                      "alpha_org_bnd",
+                      "n_org_bnd",
+                      "K_org_bnd",
+                      "alpha_min_bnd",
+                      "K_min_bnd",
+                      "S_max_bnd"
+                      ]
 
     # ========================
     # Optimalization procedure
@@ -465,7 +560,7 @@ if __name__ == '__main__':
 
            # Run differential evolution optimization in parallel
            result_stage = differential_evolution(
-               partial(runDrutes, "all"),
+               partial(runDrutes, "all", "broad"),
                bounds,
                strategy='rand1bin',
                popsize=16,
@@ -482,7 +577,15 @@ if __name__ == '__main__':
        # ==================================================
        case "fine":
            # Load the best guess array
-           best_guess = np.loadtxt("best_guess.in")
+           best_guess = np.loadtxt("calib_res/best_guess.in")
+
+           # Set chosen params to log10
+           best_guess_log = best_guess
+           best_guess_log[7] = np.log10(best_guess[7]) # alpha_org
+           best_guess_log[9] = np.log10(best_guess[9]) # K_org
+           best_guess_log[10] = np.log10(best_guess[10]) # alpha_min
+           best_guess_log[12] = np.log10(best_guess[12]) # K_min
+           best_guess_log[13] = np.log10(best_guess[13]) # S_root
 
            # Shrink the bound around the best case
            # if comming from broad use result_stage1.x as "best_guess"
@@ -490,7 +593,7 @@ if __name__ == '__main__':
            init_pop = jitter_init(best_guess, refined_bounds, rel=0.05, size=16)
 
            # Define log header for stage 2
-           with open("de_log.csv", "a") as f:
+           with open("finetune_log.csv", "a") as f:
                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                f.write(f"\n# OPTIMALIZATION LOG --- STAGE 2 --- {timestamp}\n"+
                        "call_id,timestamp,error,error_heat,error_moist,"+
@@ -501,7 +604,7 @@ if __name__ == '__main__':
                        "alpha_min[1/m],n_min[-],K_min[m/s],S_max[m/s]\n")
            # Run differential evolution optimization in parallel
            result_stage = differential_evolution(
-               partial(runDrutes, "all"),
+               partial(runDrutes, "all", "fine"),
                refined_bounds,
                strategy='best1bin',
                popsize=16,          
@@ -532,32 +635,43 @@ if __name__ == '__main__':
                        "alpha_min[1/m],n_min[-],K_min[m/s],S_max[m/s]\n")
            # Run differential evolution optimization in parallel
            result_stage = differential_evolution(
-               partial(runDrutes, "subset"),
+               partial(runDrutes, "subset", "broad"),
                bounds_subset,
                strategy='rand1bin',
                popsize=16,
                mutation=(0.3, 1.8),
                recombination=0.8,
                tol=1e-3,
-               maxiter=80,
+               maxiter=42,
                workers=-1,
                updating='deferred',
                polish=True   
            )
-       # ====================================================
-       # Fine-tune subset parameter space based on best guess
-       # ====================================================
+       # =========================================================
+       # Finer subset parameter DE calibration based on best guess
+       # =========================================================
        case "subset-fine":
            # Load the best guess array
-           best_guess = np.loadtxt("best_guess.in")
+           best_guess = np.loadtxt("calib_res/best_guess_newcalib.in")
+
+           # Set chosen params to log10
+           best_guess_log = best_guess.copy()
+           best_guess_log[7] = np.log10(best_guess[7]) # alpha_org
+           best_guess_log[9] = np.log10(best_guess[9]) # K_org
+           best_guess_log[10] = np.log10(best_guess[10]) # alpha_min
+           best_guess_log[12] = np.log10(best_guess[12]) # K_min
+           best_guess_log[13] = np.log10(best_guess[13]) # S_root
 
            # Shrink the bound around the best case
            # if comming from broad use result_stage1.x as "best_guess"
-           refined_bounds = shrink_bounds(best_guess, bounds_subset, shrink=0.15)
-           init_pop = jitter_init(best_guess, refined_bounds, rel=0.05, size=16)
+           refined_bounds = shrink_bounds(best_guess_log, bounds_subset, shrink=0.15)
+           init_pop = jitter_init(best_guess_log, refined_bounds, rel=0.05, size=16)
+
+           print(bounds_subset)
+           print(refined_bounds)
 
            # Define log header for stage 2
-           with open("de_log.csv", "a") as f:
+           with open("finetune_log.csv", "a") as f:
                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                f.write(f"\n# OPTIMALIZATION LOG --- STAGE 2 --- {timestamp}\n"+
                        "call_id,timestamp,error,error_heat,error_moist,"+
@@ -568,7 +682,7 @@ if __name__ == '__main__':
                        "alpha_min[1/m],n_min[-],K_min[m/s],S_max[m/s]\n")
            # Run differential evolution optimization in parallel
            result_stage = differential_evolution(
-               partial(runDrutes, "subset"),
+               partial(runDrutes, "subset", "fine"),
                refined_bounds,
                strategy='best1bin',
                popsize=16,          
@@ -581,5 +695,73 @@ if __name__ == '__main__':
                polish=True,
                init=init_pop
            )
+       # ====================================================
+       # Fine-tune subset parameter space based on best guess
+       # ====================================================
+       case "subset-finer":
+           # Load the log and pick the best guess row
+           log_df = pd.read_csv(
+               "de_log.csv",
+               # "finetune_log.csv",
+               comment="#", 
+               header=0
+           )
+           # Pick out the best row
+           error_col = log_df["error"]
+           min_error_idx = error_col.idxmin()
+           min_error_val = error_col[min_error_idx]
+           print(f"Best guess found in log: {min_error_val:.6f} (row {min_error_idx+4})")
+           best_row = log_df.loc[min_error_idx] 
 
-    print("CALIBRATION FINISHED!!!")
+           calibrated_cols = ["b1_org[W/(m.K)]", "b3_org[W/(m.K)]", "b1_min[W/(m.K)]",
+                              "albedo[-]", "alpha_org[1/m]", "n_org[-]", "alpha_min[1/m]", "n_min[-]"]
+
+           best_guess = best_row[calibrated_cols].to_numpy(dtype=float)
+           print(f"best_guess shape: {best_guess.shape}, bounds_subset length: {len(bounds_subset)}")
+           print(best_guess)
+
+           # Set chosen params to log10
+           best_guess[4] = np.log10(best_guess[4]) # alpha_org
+           best_guess[6] = np.log10(best_guess[6]) # alpha_min
+           
+           # Generate initial population by small perturbation around best_guess
+           rng = np.random.default_rng(42)
+           init_pop = best_guess + rng.uniform(-0.01, 0.01, size=(16, len(best_guess))) * best_guess
+
+           # Write log header
+           with open("finetune_log.csv", "a") as f:
+               timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+               f.write(f"\n# OPTIMALIZATION LOG --- SUBSET FINETUNING MULTISTAGE (L-BFGS-B) --- {timestamp}\n"+
+                       f"# CALIBRATED VARS: {display_subset}\n"+
+                       "call_id,timestamp,error,error_heat,error_moist,"+
+                       "b1_org[W/(m.K)],b2_org[W/(m.K)],b3_org[W/(m.K)],"+
+                       "b1_min[W/(m.K)],b2_min[W/(m.K)],b3_min[W/(m.K)],"+
+                       "albedo[-],"+
+                       "alpha_org[1/m],n_org[-],K_org[m/s],"+
+                       "alpha_min[1/m],n_min[-],K_min[m/s],S_max[m/s]\n")
+
+           # Set up objective fcn
+           obj_fn = partial(runDrutes, "subset", "fine")
+
+           # run single minimalization
+           def run_single(x0):
+               return minimize(
+                   obj_fn, # objective fcn
+                   x0, # inital population
+                   method="L-BFGS-B",
+                   bounds=bounds_subset,
+                   options={
+                       "maxiter": 300,
+                       "ftol": 1e-12,   
+                       "gtol": 1e-8,
+                   }
+               )
+
+           # Run all minimalizations in parallel
+           with ProcessPoolExecutor() as executor:
+               results = list(executor.map(run_single, init_pop))
+
+           # Pick the best result
+           result_stage = min(results, key=lambda r: r.fun if r.success else np.inf)
+# ==================================================================================
+    print("!!! CALIBRATION FINISHED !!!")

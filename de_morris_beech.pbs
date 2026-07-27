@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -N morris_beech
+#PBS -l select=1:ncpus=64:mem=128gb
+#PBS -l walltime=24:00:00
+#PBS -j oe
+#PBS -o morris_beech.out
+#PBS -m abe
+
+cd $PBS_O_WORKDIR || exit 1
+
+# One drutes thread per Python worker (see de_beech.pbs for rationale).
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export VECLIB_MAXIMUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
+# Activate the coupledOpt env by explicit prefix on plzen1 (see de_beech.pbs).
+module add mambaforge 2>/dev/null || true
+source "$(conda info --base)/etc/profile.d/conda.sh"
+mamba activate /storage/plzen1/home/vstein/.conda/envs/coupledOpt || {
+    echo "ERROR: cannot activate coupledOpt env"; exit 1; }
+python -c "import pandas, numpy, scipy, SALib" || {
+    echo "ERROR: coupledOpt env is missing required packages (need SALib)"; exit 1; }
+
+# TRAJ (Morris trajectories) is optional; default 20 -> 300 DRUtES runs.
+# Submit with e.g.: qsub -v TRAJ=40 de_morris_beech.pbs
+python morris_screening.py --trajectories "${TRAJ:-20}" --target error

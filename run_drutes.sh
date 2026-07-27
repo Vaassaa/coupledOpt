@@ -1,11 +1,12 @@
 #!/bin/bash
 # Bash script for rewriting .conf file for parameter optimalization
-WORKDIR="$1"
-shift
+TEMPLATE_DIR="$1"
+WORKDIR="$2"
+shift 2
 # remove drutes_run_*
 rm -rf "$WORKDIR"
-# copy temp dir and name it drutes_run_*
-cp -a drutes_temp "$WORKDIR"
+# copy stand-specific template dir
+cp -a "$TEMPLATE_DIR" "$WORKDIR"
 # move to that dir
 cd "$WORKDIR"
 

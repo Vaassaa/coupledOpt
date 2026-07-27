@@ -10,6 +10,7 @@ import pandas as pd
 campaign_info = "#campaign 2024-09-08 00:00 2024-09-30 00:00"
 picked_column = 'T_2m[-](era5)'
 picked_column = 'T_15cm[°C](amalie)'
+picked_column = 'total_cloud_cover[-](era5)'
 
 # Define column names according to the commented header.
 # column_names = [
@@ -39,7 +40,7 @@ new_data = pd.read_csv('setup_out/temp.dat', comment='#', sep='\\s+', header=Non
 data[picked_column] = new_data["temp[˚C]"]
 
 # Save the modified data back to .in file starting from third row (index 2), without index and with a custom format.
-with open('setup_out/ebalance.in', 'w') as f:
+with open('setup_out/smrk_ebalance.in', 'w') as f:
     # Write header manually
     f.write(campaign_info+"\n")
     f.write('#' + '\t'.join(column_names) + '\n')  # Manually add column names with comment

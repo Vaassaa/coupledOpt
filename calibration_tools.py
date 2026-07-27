@@ -9,7 +9,7 @@ Dissertation
 from datetime import datetime
 import numpy as np
 
-def log_run(call_id, error, error_heat, error_moist, par, logfile="de_log.csv"):
+def log_run(call_id, error, error_heat, error_moist, par, logfile):
     """
     Appends a single optimisation step to a CSV log file.
     -----------------------------------------------------
@@ -40,7 +40,7 @@ def calcHydraulicHead(theta, ret_par):
     alpha = ret_par[0] 
     n     = ret_par[1] 
     m     = ret_par[2]
-    h = - 1/alpha * (1 - (theta**(1/m)) / (theta**(1/m)))**(1/n)
+    h = - 1/alpha * ((1 - (theta**(1/m))) / (theta**(1/m)))**(1/n)
     return h
 
 

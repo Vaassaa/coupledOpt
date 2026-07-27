@@ -1,9 +1,13 @@
 import pandas as pd
 from datetime import datetime, timezone
+import sys
+
+tree = sys.argv[1]
+loc = sys.argv[2]
 
 start_date = datetime(2024, 9, 8, 0, 0, 0, tzinfo=timezone.utc)
 end_date   = datetime(2024, 9, 30, 0, 0, 0, tzinfo=timezone.utc)
-def process_subsoil(path):
+def process_subsoissl(path):
 
     df = pd.read_csv(path)
     df["DTM"] = pd.to_datetime(df["DTM"], utc=True)
@@ -14,6 +18,7 @@ def process_subsoil(path):
         g = g.sort_values("DTM").set_index("DTM")
         g = g.loc[start_date:end_date]
 
+        g = g[~g.index.duplicated(keep="first")]  # ← add this line
         g = g.resample("10min").interpolate()
         sensors.append(g)
 
@@ -38,7 +43,30 @@ def process_subsoil(path):
 
     return result
 
-def process_topsoil(path):
+def process_topsoil_debug(path):
+    df = pd.read_csv(path)
+    df["DTM"] = pd.to_datetime(df["DTM"], utc=True)
+    sensors = []
+    for sensor_id, g in df.groupby("ID"):
+        g = g.sort_values("DTM").set_index("DTM")
+        g = g.loc[start_date:end_date]
+        
+        # DEBUG
+        dups = g.index[g.index.duplicated()]
+        if len(dups) > 0:
+            print(f"Sensor {sensor_id} has {len(dups)} duplicates BEFORE drop:")
+            print(dups)
+        
+        g = g[~g.index.duplicated(keep="first")]
+        
+        # DEBUG - confirm gone
+        dups_after = g.index[g.index.duplicated()]
+        print(f"Sensor {sensor_id}: {len(dups_after)} duplicates after drop, index monotonic: {g.index.is_monotonic_increasing}")
+        
+        g = g.resample("10min").interpolate()
+        sensors.append(g)
+
+def process_topsoilss(path):
 
     df = pd.read_csv(path)
     df["DTM"] = pd.to_datetime(df["DTM"], utc=True)
@@ -50,6 +78,7 @@ def process_topsoil(path):
         g = g.loc[start_date:end_date]
 
         # resample per sensor
+        g = g[~g.index.duplicated(keep="first")]  # ← add this line
         g = g.resample("10min").interpolate()
 
         sensors.append(g)
@@ -78,8 +107,55 @@ def process_topsoil(path):
     )
 
     return result
-top = process_topsoil("dataIN/buk/topsoil_buk_loc1.csv")
-sub = process_subsoil("dataIN/buk/subsoil_buk_loc1.csv")
+
+def process_topsoil(path):
+    df = pd.read_csv(path)
+    df["DTM"] = pd.to_datetime(df["DTM"], utc=True)
+    sensors = []
+    for _, g in df.groupby("ID"):
+        g = g.sort_values("DTM").set_index("DTM")
+        g = g.loc[start_date:end_date]
+        g = g[~g.index.duplicated(keep="first")]
+        sensors.append(g)  # ← no resample here
+
+    full = pd.concat(sensors)
+
+    # Average across sensors at each timestamp, then resample once
+    full = full.groupby(full.index).mean()  # collapse overlapping sensor readings
+    full = full.resample("10min").interpolate()  # now index is clean and unique
+
+    result = pd.DataFrame(index=full.index)
+    result["T_n8cm"]    = full["T1"]
+    result["T_n0cm"]    = full["T2"]
+    result["T_15cm"]    = full["T3"]
+    result["theta_n8cm"] = full["moisture"]
+    return result
+
+def process_subsoil(path):
+    df = pd.read_csv(path)
+    df["DTM"] = pd.to_datetime(df["DTM"], utc=True)
+    sensors = []
+    for _, g in df.groupby("ID"):
+        g = g.sort_values("DTM").set_index("DTM")
+        g = g.loc[start_date:end_date]
+        g = g[~g.index.duplicated(keep="first")]
+        sensors.append(g)  # ← no resample here
+
+    full = pd.concat(sensors)
+
+    # Average across sensors at each timestamp, then resample once
+    full = full.groupby(full.index).mean()  # collapse overlapping sensor readings
+    full = full.resample("10min").interpolate()  # now index is clean and unique
+
+    result = pd.DataFrame(index=full.index)
+    result["T_n23cm"]    = full["T1"]
+    result["T_n15cm"]    = full["T2"]
+    result["theta_n23cm"] = full["moisture"]
+
+    return result
+
+top = process_topsoil("dataIN/"+tree+"/topsoil_"+tree+"_"+loc+".csv")
+sub = process_subsoil("dataIN/"+tree+"/subsoil_"+tree+"_"+loc+".csv")
 
 df = pd.concat([top, sub], axis=1)
 
@@ -95,7 +171,7 @@ monitoring_data = pd.DataFrame({
     })
 
 # File path
-out_file = "setup_out/monitoring.dat"
+out_file = "setup_out/"+tree+"_"+loc+"monitoring.dat"
 
 # Write header manually
 with open(out_file, "w") as f:
@@ -113,7 +189,7 @@ temp_15cm = pd.DataFrame({
     })
 
 # File path
-out_file = "setup_out/temp.dat"
+out_file = "setup_out/"+tree+"_"+loc+"_temp.dat"
 
 # Write header manually
 with open(out_file, "w") as f:

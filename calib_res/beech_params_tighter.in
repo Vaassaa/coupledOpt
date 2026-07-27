@@ -1,0 +1,16 @@
+# best calibrated parameters (lowest error)
+# source error = 3.0806791  (call_id 22754)
+b1_org = 0.13735646
+b2_org = 5.6272593
+b3_org = 1.6612968
+b1_min = 0.60855841
+b2_min = 6.3330865
+b3_min = 2.1059971
+albedo = 0.42243388
+alpha_org = 3.5449273
+n_org = 2.9301011
+K_org = 4.0012643e-05
+alpha_min = 0.027717515
+n_min = 2.988801
+K_min = 3.967835e-08
+S_max = 1.8066291e-08

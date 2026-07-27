@@ -25,7 +25,7 @@ column_names = [
 data = pd.read_csv('ebalance.in', comment='#', sep='\\s+', header=None, names=column_names)
 
 # Rewrite total_cloud_cover column values to 0.8.
-data[picked_column] = 0.8
+data[picked_column] = 0.95
 
 # Save the modified data back to .in file starting from third row (index 2), without index and with a custom format.
 with open('ebalance.in', 'w') as f:

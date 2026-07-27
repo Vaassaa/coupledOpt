@@ -22,7 +22,7 @@ tree = sys.argv[1]
 loc = sys.argv[2]
 dat_fol = "dataIN"
 PATH = dat_fol+"/"+tree+"/"
-out_FOLD = "optData/"
+out_FOLD = "setup_out/"
 
 # --- GEARS --- 
 # Read topsoil buk data
@@ -32,18 +32,20 @@ topsoil = pd.read_csv(PATH + FILE)
 # Group the data by ID
 ID_group = topsoil.groupby("ID")
 # Display information about each group
-# for key, item in ID_group:
-    # print(f"Group Key: {key}")
-    # print(item.info())
+keys = []
+for key, item in ID_group:
+    print(f"Group Key: {key}")
+    print(item.info())
+    keys.append(key) 
 
 # Get the sensors
-topsoil_sen1 = ID_group.get_group(94212703)
+topsoil_sen1 = ID_group.get_group(keys[0])
 topsoil_sen1["DTM"] = pd.to_datetime(topsoil_sen1["DTM"], utc=True)
 topsoil_sen1 = topsoil_sen1.set_index("DTM") # set index for slicing
-topsoil_sen2 = ID_group.get_group(94212707)
+topsoil_sen2 = ID_group.get_group(keys[1])
 topsoil_sen2["DTM"] = pd.to_datetime(topsoil_sen2["DTM"], utc=True)
 topsoil_sen2 = topsoil_sen2.set_index("DTM")
-topsoil_sen3 = ID_group.get_group(94212719)
+topsoil_sen3 = ID_group.get_group(keys[2])
 topsoil_sen3["DTM"] = pd.to_datetime(topsoil_sen3["DTM"], utc=True)
 topsoil_sen3 = topsoil_sen3.set_index("DTM")
 
@@ -78,17 +80,20 @@ subsoil = pd.read_csv(PATH + FILE)
 
 ID_group = subsoil.groupby("ID")
 # Display information about each group
+keys = []
 for key, item in ID_group:
     print(f"Group Key: {key}")
     print(item.info())
+    keys.append(key) 
+
 # Get the sensors
-subsoil_sen1 = ID_group.get_group(94218455)
+subsoil_sen1 = ID_group.get_group(keys[0])
 subsoil_sen1["DTM"] = pd.to_datetime(subsoil_sen1["DTM"], utc=True)
 subsoil_sen1 = subsoil_sen1.set_index("DTM") # set index for slicing
-subsoil_sen2 = ID_group.get_group(94218474)
+subsoil_sen2 = ID_group.get_group(keys[1])
 subsoil_sen2["DTM"] = pd.to_datetime(subsoil_sen2["DTM"], utc=True)
 subsoil_sen2 = subsoil_sen2.set_index("DTM")
-subsoil_sen3 = ID_group.get_group(94218475)
+subsoil_sen3 = ID_group.get_group(keys[2])
 subsoil_sen3["DTM"] = pd.to_datetime(subsoil_sen3["DTM"], utc=True)
 subsoil_sen3 = subsoil_sen3.set_index("DTM")
 
@@ -128,7 +133,7 @@ intialTemp = pd.DataFrame({
     'T': T0_values})
 
 # Save to a .in file with '#' header / comment in fortran
-filename = out_FOLD+'heaticond1D.in'
+filename = out_FOLD+tree+'_heaticond1D.in'
 with open(filename, 'w') as f:
     f.write(f"# campaign {start_date} {end_date}\n")
     f.write("# z[m]\tT[˚C]\n")       
